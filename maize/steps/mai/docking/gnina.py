@@ -4,6 +4,7 @@ from functools import partial, reduce
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
+import rdkit.Chem.AllChem as Chem
 import numpy as np
 from numpy.typing import NDArray
 import pytest
@@ -29,11 +30,57 @@ def refresh_conformer_wrappers(iso) -> None:
     iso._conformers = wrappers
 
 
+def _split_ligands(mols: IsomerCollection, scaffold: str) -> tuple:
+    """Split each mol using the scaffold and compute atom SMARTS
+
+    :param mols: molecules to split
+    :param scaffold: scaffold SMARTS
+    :returns: fragment mols, atom SMARTS
+    """
+
+    # Identify attachment atom and R-group atoms
+    patt = Chem.MolFromSmarts(scaffold)
+    mols_smarts = []
+
+    for mol in mols:
+        match = mol.GetSubstructMatcees(patt)
+
+        if len(match) > 1:
+            ...  # FIXME: what to do in case ofg multiple matches
+
+        scaff_idxs = set(match)
+        rgroup_idxs = [a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in scaff_idxs]
+
+        attachment_atom = None
+
+        for rg in rgroup_idxs:
+            for nbr in mol.GetAtomWithIdx(rg).GetNeighbors():
+                if nbr.GetIdx() in scaff_idxs:
+                    attachment_atom = rg
+                    break
+
+        # Extract the R-group as a separate molecule, preserving attachment atom order
+        order = [attachment_atom] + [i for i in rgroup_idxs if i != attachment_atom]
+        rgroup = Chem.PathToSubmol(mol, order)
+
+        # Convert the R-group to SMARTS with atom 0 first
+        rgroup_smarts = Chem.MolToSmarts(rgroup)
+        recursive_smarts = f"[$({rgroup_smarts})]"
+
+        frag_mol = None
+
+        # TODO: extract fragment molecule
+
+        mols_smarts.append((frag_mol, recursive_smarts))
+
+    return mols_smarts
+
+
 class _GNINA(Node, register=False):
     """GNINA base"""
 
-    SCORE_TAGS = ("minimizedAffinity", "CNNscore", "CNNaffinity", "CNN_VS")
-    SCORE_TAGS_AGG: tuple[Literal["min", "max"], ...] = ("min", "max", "max", "max")
+    SCORE_TAGS = ("minimizedAffinity", "minimizedRMSD", "CNNscore", "CNNaffinity", "CNN_VS")
+    SCORE_TAGS_AGG: tuple[Literal["min", "max"], ...] = ("min", "max", "max", "max", "max")
     PRIMARY_SCORE_TAG = "minimizedAffinity"
 
     required_callables = ["gnina"]
@@ -76,6 +123,18 @@ class _GNINA(Node, register=False):
 
     cnn: Parameter[str] = Parameter(optional=True)
     """Name of a pre-trained CNN model or ensemble models to use"""
+
+    covalent: Flag = Parameter(default=False)
+    """Whether to perform covalent docking"""
+
+    # scaffold: Parameter[str] = Parameter(optional=True)
+    # """Scaffold for splitting"""
+
+    # attachment_point_target: Parameter[str] = Parameter(optional=True)
+    # """Attachment point for protein in covalent docking"""
+
+    local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
+    """Reference structure filename for local optimization: ligands will be aligned to it"""
 
     n_jobs: Parameter[int] = Parameter(default=cpu_count())
     """The number of CPUs to use per docking run"""
@@ -128,6 +187,7 @@ class GNINAEnsemble(_GNINA):
         mols = self.inp.receive()
         protein_confs = self.ensemble.filepath
         weights = np.ones_like(protein_confs, dtype=np.float32) / len(protein_confs)
+
         if self.ensemble_weights.is_set:
             weights = np.array(self.ensemble_weights.value, dtype=np.float32)
 
@@ -292,7 +352,8 @@ class GNINA(_GNINA):
         )
 
         command = (
-            f"{self.runnable['gnina']} -l {inputs.as_posix()} -r {protein.as_posix()} "
+            f"{self.runnable['gnina']} "
+            f"--ligand {inputs.as_posix()} --receptor {protein.as_posix()} "
             f"--scoring {self.scoring.value} --cnn_scoring {self.cnn_scoring.value} "
             f"--exhaustiveness {self.exhaustiveness.value} --num_modes {self.n_poses.value} "
             f"--cpu {self.n_jobs.value} --out {output.as_posix()} "
@@ -300,7 +361,33 @@ class GNINA(_GNINA):
 
         ref: Isomer | str | None
 
-        if (ref := self.inp_ref.receive_optional()) is not None:
+        if self.local_opt_ref.is_set:
+            ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
+
+            for mol in mols:
+                for iso in mol.molecules:
+                    iso_mol = iso._molecule
+                    Chem.SanitizeMol(iso_mol)
+
+                    try:  # 3D constraint embedding
+                        iso_mol = Chem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
+                    except ValueError:  # embedding based on 2D match
+                        # FIXME: multiple matches
+                        initial_match = iso_mol.GetSubstructMatch(ref_mol)
+                        atom_map_initial = list(zip(initial_match, range(iso_mol.GetNumAtoms())))
+
+                        try:
+                            # in-place alignment!
+                            rmsd = Chem.AlignMol(iso_mol, ref_mol, atomMap=atom_map_initial)
+                            self.logger.debug(f"{rmsd=}")
+                        except ValueError:  # Bad Conformer Id
+                            pass
+
+            iso._molecule = iso_mol
+
+            # only local optimization and minimization of the whole ligand
+            command += "--local_only --minimize "
+        elif (ref := self.inp_ref.receive_optional()) is not None:
             ref_file = Path("ref.sdf")
             if isinstance(ref, str):
                 ref = find_mol(mols, value=ref)
@@ -346,7 +433,20 @@ class GNINA(_GNINA):
         if not self.gpu.value or not (gpu_ok or mps_only):
             command += "--no_gpu "
 
+        # if not self.covalent.is_set:
+        _prev_len = len(mols)
         save_sdf_library(inputs, mols, split_strategy="none")
+        # else:
+        #    scaffold = self.scaffold.value
+        #    target_AP = self.attachment_point_target.value
+
+        #    frag_mols, ligand_SMARTS = _split_ligands(mols, scaffold)
+
+        #    command += (f"--covalent_rec_atom {target_AP} "
+        #                f"--covalent_lig_atom_pattern {ligand_SMARTS}")
+
+        #    save_sdf_library(inputs, frag_mols, split_strategy="none")
+        self.logger.debug(f"{command=}")
         self.run_command(
             command,
             validators=[FileValidator(output)],
@@ -354,7 +454,19 @@ class GNINA(_GNINA):
             prefer_batch=True,
         )
 
-        mols = load_sdf_library(output, split_strategy="inchi", renumber=False)
+        # FIXME: This reads the SDF file generated from Gnina which uses
+        #        OpenBabel but OpemBabel SMILES may be incompatible with RDKit
+
+        # Assume that only a single conformer is provided because
+        # inchi splitting will discard duplicates which can happen when
+        # REINVENT basically generates the same molecule e.g.
+        # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
+        mols = load_sdf_library(output, split_strategy="none", sanitize=False, renumber=False)
+        _new_len = len(mols)
+        if _new_len != _prev_len:
+            self.logger.debug(f"BEFORE: {_prev_len}, AFTER: {_new_len}")
+            self.logger.debug(mols)
+
         for mol in mols:
             for iso in mol.molecules:
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
