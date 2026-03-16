@@ -123,14 +123,19 @@ class Gypsum(Node):
             gypsum_index = i + 1
             file = Path(DEFAULT_FILE_NAME.format(gypsum_index))
             self.logger.debug("Checking SMILES '%s'", smi)
+
             if smi in failed:
                 self.logger.warning(
                     "Skipping failed embedding for SMILES '%s', falling back to RDKit", smi
                 )
                 mol = IsomerCollection.from_smiles(smi)
                 mol.embed()
+
                 if any(isomer.n_conformers == 0 for isomer in mol.molecules):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
+
+                for isomer in mol.molecules:
+                    isomer.name = isomer.inchi
 
             # We already check for failed embeddings so this shouldn't really happen
             elif not file.exists() or file.stat().st_size == 0:
@@ -142,8 +147,12 @@ class Gypsum(Node):
             else:
                 mol = IsomerCollection.from_sdf(file)
                 mol.smiles = smi
+
                 for isomer in mol.molecules:
                     isomer.name = isomer.inchi
+
+                    if not isomer.name:
+                        self.logger.debug(f"@@@ InChiKey generation failed for {smi} read from {file}")
 
             mols.append(mol)
 
