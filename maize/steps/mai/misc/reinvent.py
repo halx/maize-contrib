@@ -14,11 +14,8 @@ import toml
 import numpy as np
 from numpy.typing import NDArray
 from string import Template
-
-
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Crippen, rdMolDescriptors
-
 
 from maize.core.node import Node
 from maize.core.workflow import Workflow
@@ -29,7 +26,6 @@ from maize.utilities.execution import CommandRunner, RunningProcess
 from maize.utilities.testing import TestRig
 from maize.utilities.io import setup_workflow, Config
 from maize.utilities.validation import ContentValidator, FileValidator
-
 
 if TYPE_CHECKING:
     from maize.core.graph import Graph
@@ -666,9 +662,13 @@ class ReinventEntry(Node):
 
         self.logger.debug("Received %s smiles", len(data["smiles"]))
         self.out.send(data["smiles"])
+
+        data["metadata"]["smiles"] = data["smiles"]  # keep track of SMILES
         self.out_metadata.send(data["metadata"])
 
-INCHIKEY_FIELD_NAME = "InChIKey"   # FIXME: combine with tagger in cheminformatics
+
+INCHIKEY_FIELD_NAME = "InChIKey"  # FIXME: combine with tagger in cheminformatics
+
 
 class ReinventExit(Node):
     """
@@ -684,6 +684,9 @@ class ReinventExit(Node):
     inp: Input[list[IsomerCollection]] = Input()
     """Scored molecule input"""
 
+    metadata: Input[dict] = Input(optional=True)
+    """Optional metadata input (from REINVENT)"""
+
     data: FileParameter[Annotated[Path, Suffix("json")]] = FileParameter(exist_required=False)
     """JSON output for Maize REINVENT scoring component"""
 
@@ -694,51 +697,80 @@ class ReinventExit(Node):
         mols = self.inp.receive()
         self.logger.debug(f"Received {len(mols)} mols")
 
-        if self.tag.is_set:
-            if self.tag.value == "__return_all":
+        keys = [key for key in mols[0].scores]  # assumes all score keys the same for all molecules
+        new_mols = mols
 
-                scores: dict[str, list[float]] = {}
+        if self.metadata.ready():
+            metadata = self.metadata.receive()
+            rnv_smilies = metadata["smiles"]
 
-                for mol in mols:
-                    for key in mol.scores:
-                        if key not in scores:
-                            scores[key] = []
+            new_mols = np.full(len(rnv_smilies), None)
+            m_mols = mols.copy()
+            m_mols.reverse()   # use as stack
+            m_smilies = [mol.smiles for mol in mols]
 
-                        scores[key].append(mol.scores[key])
-            else:
-
-                key = self.tag.value
-                scores = []
-
-                for mol in mols:
-                    scores.append(mol.scores[key] if key in mol.scores else np.nan)
-        else:
-            scores = [float(mol.primary_score) for mol in mols]
+            for idx, smiles in enumerate(rnv_smilies):
+                if smiles in m_smilies:  # assumes no duplicates
+                    new_mols[idx] = m_mols.pop()  # assumes original order
+                else:
+                    self.logger.warning(f"RNV EXIT: SMILES {smiles} was dropped")
 
         names = []
 
-        for mol in mols:
-            if mol.has_tag(INCHIKEY_FIELD_NAME):
-                name = mol.get_tag(INCHIKEY_FIELD_NAME)
+        if self.tag.is_set:
+            if self.tag.value == "__return_all":
+                scores: dict[str, list[float]] = {}
+
+                for mol in new_mols:
+                    for key in keys:
+                        if key not in scores:
+                            scores[key] = []
+
+                        if mol:
+                            scores[key].append(mol.scores[key])
+                        else:
+                            scores[key].append(np.nan)
+
+                    names.append(_get_name(mol))
             else:
-                name = mol.name
+                key = self.tag.value
+                scores = []
 
-            names.append(name)     
+                for mol in new_mols:
+                    if mol:
+                        scores.append(mol.scores[key] if key in keys else np.nan)
+                    else:
+                        scores.append(np.nan)
 
-        # Add per-mol relevances if we have them
-        relevance = [1.0 for _ in mols]
+                    names.append(_get_name(mol))
+        else:
+            scores = []
 
-        if all(iso.has_tag("relevance") for mol in mols for iso in mol.molecules):
-            relevance = [
-                max(float(cast(float, iso.get_tag("relevance"))) for iso in mol.molecules)
-                for mol in mols
-            ]
+            for mol in new_mols:
+                if mol:
+                    scores.append(mol.primary_score)
+                else:
+                    scores.append(np.nan)
 
-        data = dict(scores=scores, relevances=relevance, names=names)
+                names.append(_get_name(mol))
+
+        data = dict(scores=scores, names=names)
         self.logger.debug(f"Sending data back: {data}")
 
         with self.data.filepath.open("w") as out:
             out.write(json.dumps(data))
+
+
+def _get_name(mol):
+    if not mol:
+        return "dropped"
+
+    if mol.has_tag(INCHIKEY_FIELD_NAME):
+        name = mol.get_tag(INCHIKEY_FIELD_NAME)
+    else:
+        name = mol.name
+
+    return name
 
 
 @pytest.fixture
