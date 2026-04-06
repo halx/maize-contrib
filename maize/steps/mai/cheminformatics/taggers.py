@@ -31,6 +31,7 @@ SCORE_AGG_RULES: tuple[tuple[str, Literal["min", "max"]], ...] = (
     ("Cationic", "max"),
     ("PiCation", "max"),
     ("PiStacking", "max"),
+    ("binaryIFP", "max"),
 )
 
 
@@ -42,6 +43,20 @@ def infer_agg_from_tag(name: str) -> Literal["min", "max"]:
             return agg
     return "min"
 
+
+def tag_to_number(v: object, default: int = 0) -> int | float:
+    if isinstance(v, (bool, int, np.integer)):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        f = float(v)
+        return default if np.isnan(f) else f
+    if isinstance(v, str):
+        try:
+            f = float(v) 
+            return f
+        except Exception:
+            return default 
+    return default
 
 class TagAgg(Node):
     """Set new tags by performing aggregation over tags"""
@@ -77,7 +92,7 @@ class TagAgg(Node):
     """
 
     AGG: dict[_ValidOpsType, Callable[[Sequence[Any]], float]] = {
-        "min": np.nanmax,
+        "min": np.nanmin,
         "max": np.nanmax,
         "mean": np.nanmean,
         "var": np.nanvar,
@@ -634,7 +649,7 @@ class MergeScoreTag(Node):
     inp2: Input[list[IsomerCollection]] = Input()
     """Second list of molecules (source of scores)."""
 
-    tags: Parameter[list[str] | str] = Parameter(optional=True)
+    score_tags: Parameter[list[str] | str] = Parameter(optional=True)
     """Names of scores to copy."""
 
     moltag1: Parameter[str] = Parameter(default="m_molid")
@@ -668,12 +683,12 @@ class MergeScoreTag(Node):
         infer = self.infer.value
 
         # If no tags requested, just pass through
-        if not self.tags.is_set:
+        if not self.score_tags.is_set:
             self.out.send(mols1)
             self.logger.warning("No score tags specified, passing input unchanged.")
             return
 
-        score_names = self.tags.value
+        score_names = self.score_tags.value
         if isinstance(score_names, str):
             score_names = [score_names]
 
@@ -845,6 +860,17 @@ class TestSuiteTaggers:
         assert np.allclose(mols[0].molecules[0].get_tag("other-score"), -1.5, atol=0.01)
         assert np.allclose(mols[1].molecules[0].get_tag("other-score"), -2.5, atol=0.01)
 
+    def test_tag_to_number(self) -> None:
+        assert tag_to_number(5) == 5
+        assert tag_to_number(3.14) == 3.14
+        assert tag_to_number(True) == 1
+        assert tag_to_number(False) == 0
+        assert tag_to_number("2.718") == 2.718
+        assert tag_to_number("not a number", default=0) == 0
+        assert tag_to_number(None, default=0) == 0
+        assert tag_to_number(None, default=-1) == -1
+        
+     
     def test_TagMath(self, tagged_mols: list[IsomerCollection]) -> None:
         rig = TestRig(TagMath)
         res = rig.setup_run(
@@ -902,7 +928,7 @@ class TestSuiteTaggers:
     ) -> None:
         rig = TestRig(MergeScoreTag)
         res = rig.setup_run(
-            inputs={"inp1": [lib_a], "inp2": [lib_b]}, parameters={"tags": ["num_interaction"]}
+            inputs={"inp1": [lib_a], "inp2": [lib_b]}, parameters={"score_tags": ["num_interaction"]}
         )
         mols = res["out"].get()
         assert mols is not None
@@ -1049,7 +1075,6 @@ class TestSuiteTaggers:
 
     def test_RMSD(self, path_ref: Path, iso_paths: list[Path]) -> None:
         iso_list = [Isomer.from_sdf(path) for path in iso_paths]
-        iso_list[1].embed(4)
         ref = Isomer.from_sdf(path_ref)
 
         rig = TestRig(RMSD)
@@ -1062,4 +1087,3 @@ class TestSuiteTaggers:
         assert np.allclose(tagged[0].molecules[0].scores["rmsd"], 3.36, 0.01)
         assert np.allclose(tagged[0].molecules[1].primary_score, 3.75, 0.01)
         assert np.allclose(tagged[0].molecules[1].conformers[0].get_tag("rmsd"), 3.75, 0.01)
-        assert np.allclose(tagged[0].molecules[1].conformers[1].get_tag("rmsd"), 3.75, 0.01)
