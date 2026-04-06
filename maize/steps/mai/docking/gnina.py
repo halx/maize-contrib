@@ -19,7 +19,6 @@ from maize.utilities.io import Config
 from maize.utilities.resources import cpu_count
 from maize.utilities.execution import GPU
 
-
 ScoreType = Literal["default", "ad4_scoring", "dkoes_fast", "dkoes_scoring", "vina", "vinardo"]
 CNNScoreType = Literal["none", "rescore", "refinement", "metrorescore", "metrorefine", "all"]
 PDBFileType = Annotated[Path, Suffix("pdb", "pdbqt")]
@@ -124,14 +123,12 @@ class _GNINA(Node, register=False):
     cnn: Parameter[str] = Parameter(optional=True)
     """Name of a pre-trained CNN model or ensemble models to use"""
 
-    covalent: Flag = Parameter(default=False)
-    """Whether to perform covalent docking"""
+    covalent_smarts: Parameter[str] = Parameter(optional=True)
+    """SMARTS of the fragment to remove from the molecule"""
 
-    # scaffold: Parameter[str] = Parameter(optional=True)
-    # """Scaffold for splitting"""
-
-    # attachment_point_target: Parameter[str] = Parameter(optional=True)
-    # """Attachment point for protein in covalent docking"""
+    # NOTE: this could also be x,y,z coordinates, not optional if covalent_smarts is set
+    covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
+    """Attachment point of fragment as chain:resnum:atom_name"""
 
     local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
     """Reference structure filename for local optimization: ligands will be aligned to it"""
@@ -345,8 +342,10 @@ class GNINA(_GNINA):
         mps_only = False
         gpus = GPU.from_system()
         gpu_ok = any(gpu.free for gpu in gpus)
+
         if not gpu_ok and gpus:
             mps_only = any(gpu.free_with_mps for gpu in gpus)
+
         self.logger.info(
             "GPU %savailable%s", "not " if not gpu_ok else "", ", MPS required" if mps_only else ""
         )
@@ -361,7 +360,69 @@ class GNINA(_GNINA):
 
         ref: Isomer | str | None
 
-        if self.local_opt_ref.is_set:
+        if self.covalent_smarts.is_set:
+            fragment_mol = Chem.MolFromSmarts(self.covalent_smarts.value)
+
+            if not self.covalent_ap_fragment.is_set:
+                msg = "Covalent docking requires fragment attachment point"
+                self.logger.error(msg)
+                raise ValueError(msg)
+
+            covalent_ap = self.covalent_ap_fragment.value
+            # FIXME: check syntax
+
+            for mol in mols:
+                for iso in mol.molecules:
+                    iso_mol = iso._molecule
+                    Chem.SanitizeMol(iso_mol)
+
+                    match_idx = iso_mol.GetSubstructMatches(fragment_mol)
+
+                    fragment_indices = set(match_idx[0])
+                    attachment_point = set()
+
+                    for idx in match_idx[0]:
+                        atom = mol.GetAtomWithIdx(idx)
+
+                        for neighbor in atom.GetNeighbors():
+                            neighbor_idx = neighbor.GetIdx()
+
+                            if neighbor_idx not in fragment_indices:
+                                attachment_point.add(neighbor_idx)
+
+                    if len(attachment_point) != 1:
+                        msg = "Must have exactly 1 attachment point"
+                        self.logger.error(msg)
+                        raise ValueError(msg)
+
+                    if not match_idx:
+                        msg = "SMARTS pattern did no match molecule"
+                        self.logger.error(msg)
+                        raise ValueError(msg)
+
+                    if len(match_idx) > 1:
+                        self.logger.warning("fragment matched more than once, choosing first")
+
+                    rwmol = Chem.RWMol(mol)
+                    indices_to_remove = set()
+
+                    for idx in match_idx[0]:
+                        indices_to_remove.add(idx)
+
+                    for idx in sorted(indices_to_remove, reverse=True):
+                        rwmol.RemoveAtom(idx)
+
+                    orig_order = list(range(rwmol.GetNumAtoms()))
+
+                    new_idx = next(iter(attachment_point)) - len(fragment_indices)
+                    new_order = orig_order.copy()
+                    new_order[0], new_order[new_idx] = new_order[new_idx], new_order[0]
+                    new_order
+
+                    iso._molecule = Chem.RenumberAtoms(rwmol, new_order)
+
+            command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*'"
+        elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
 
             for mol in mols:
@@ -383,7 +444,7 @@ class GNINA(_GNINA):
                         except ValueError:  # Bad Conformer Id
                             pass
 
-            iso._molecule = iso_mol
+                    iso._molecule = iso_mol
 
             # only local optimization and minimization of the whole ligand
             command += "--local_only --minimize "
@@ -433,19 +494,8 @@ class GNINA(_GNINA):
         if not self.gpu.value or not (gpu_ok or mps_only):
             command += "--no_gpu "
 
-        # if not self.covalent.is_set:
-        _prev_len = len(mols)
         save_sdf_library(inputs, mols, split_strategy="none")
-        # else:
-        #    scaffold = self.scaffold.value
-        #    target_AP = self.attachment_point_target.value
 
-        #    frag_mols, ligand_SMARTS = _split_ligands(mols, scaffold)
-
-        #    command += (f"--covalent_rec_atom {target_AP} "
-        #                f"--covalent_lig_atom_pattern {ligand_SMARTS}")
-
-        #    save_sdf_library(inputs, frag_mols, split_strategy="none")
         self.logger.debug(f"{command=}")
         self.run_command(
             command,
@@ -454,18 +504,11 @@ class GNINA(_GNINA):
             prefer_batch=True,
         )
 
-        # FIXME: This reads the SDF file generated from Gnina which uses
-        #        OpenBabel but OpemBabel SMILES may be incompatible with RDKit
-
-        # Assume that only a single conformer is provided because
+        # FIXME: review splitting strategy
         # inchi splitting will discard duplicates which can happen when
         # REINVENT basically generates the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
         mols = load_sdf_library(output, split_strategy="none", sanitize=False, renumber=False)
-        _new_len = len(mols)
-        if _new_len != _prev_len:
-            self.logger.debug(f"BEFORE: {_prev_len}, AFTER: {_new_len}")
-            self.logger.debug(mols)
 
         for mol in mols:
             for iso in mol.molecules:
