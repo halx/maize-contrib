@@ -293,6 +293,103 @@ class GNINAEnsemble(_GNINA):
         self.out.send(mols)
 
 
+def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> list[int] | None:
+    """Find index of the dummy atom which will be the attachment point
+
+    The indexes are the locations in the matching list of the dummy atom.
+    The matching list contains the indexes of the heavy atoms of the molecule.
+
+    :param match_idx: the subsstructure indexes in the molecule that match the fragment
+    :param frag_mol: the matching fragment molecule
+    :returns: locations of dummy atom, attachment point
+    """
+
+    ap_indexes = []
+
+    for idx in range(len(match_idx)):
+        frag_atom = frag_mol.GetAtomWithIdx(idx)
+
+        if frag_atom.GetSymbol() == "*":
+            ap_indexes.append(match_idx[idx])
+
+    if len(ap_indexes) != 1:  # only one AP
+        return None
+
+    return ap_indexes[0]
+
+
+def find_hydrogens(mol: Chem.Mol, heavy_idx: list[int]) -> list:
+    """Find the hydrogen from the fragment in the molecule
+
+    The fragment is expected to contain heavy atoms only
+
+    :param mol: molecule
+    :param heavy_idx: indexes of heavy atoms correspoding to fragment
+    :returns: hydrogens attached to the match
+    """
+
+    hydrogen_idx = []
+
+    for idx in heavy_idx:
+        atom = mol.GetAtomWithIdx(idx)
+
+        for neighbor_atom in atom.GetNeighbors():
+            if neighbor_atom.GetAtomicNum() == 1:  # skip H attached to dummy
+                hydrogen_idx.append(neighbor_atom.GetIdx())
+
+    return hydrogen_idx
+
+
+def delete_fragmemt_from_mol(mol: Chem.Mol, indexes: list[int]) -> Chem.Mol:
+    """Delete fragment from molecule
+
+    :param mol: molecule
+    :param indexes: indexex of all atoms to delete
+    :returns: molecule with remaining atoms
+    """
+
+    rwmol = Chem.RWMol(mol)
+    indices_to_remove = set()
+
+    for idx in indexes:
+        indices_to_remove.add(idx)
+
+    for idx in sorted(indices_to_remove, reverse=True):
+        rwmol.RemoveAtom(idx)
+
+    return rwmol.GetMol()
+
+
+def reorder_atoms(mol: Chem.Mol, first_idx: int) -> Chem.Mol:
+    """Reorder atoms in molecule with chosen atom to come first"""
+
+    order = list(range(mol.GetNumAtoms()))
+    order[0], order[first_idx] = order[first_idx], order[0]
+
+    reordered_mol = Chem.RenumberAtoms(mol, order)
+
+    # optional
+    atom = reordered_mol.GetAtomWithIdx(0)
+    atom.SetAtomMapNum(1)
+
+    return reordered_mol
+
+
+def has_one_dummy(mol: Chem.Mol) -> bool:
+    """Check if molecule has exactly one dummy"""
+
+    n_dummies = 0
+
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            n_dummies += 1
+
+    if n_dummies != 1:
+        return False
+
+    return True
+
+
 class GNINA(_GNINA):
     """
     Docks molecules with GNINA.
@@ -363,13 +460,17 @@ class GNINA(_GNINA):
         if self.covalent_smarts.is_set:
             fragment_mol = Chem.MolFromSmarts(self.covalent_smarts.value)
 
+            if not has_one_dummy(fragment_mol):
+                msg = "Covalent SMARTS must have exactly one dummy atom"
+                self.logger.critical(msg)
+                raise ValueError(msg)
+
             if not self.covalent_ap_fragment.is_set:
                 msg = "Covalent docking requires fragment attachment point"
-                self.logger.error(msg)
+                self.logger.critical(msg)
                 raise ValueError(msg)
 
             covalent_ap = self.covalent_ap_fragment.value
-            # FIXME: check syntax
 
             for mol in mols:
                 for iso in mol.molecules:
@@ -377,49 +478,22 @@ class GNINA(_GNINA):
                     Chem.SanitizeMol(iso_mol)
 
                     match_idx = iso_mol.GetSubstructMatches(fragment_mol)
+                    heavy_idx = list(match_idx[0])
 
-                    fragment_indices = set(match_idx[0])
-                    attachment_point = set()
+                    dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol)
 
-                    for idx in match_idx[0]:
-                        atom = mol.GetAtomWithIdx(idx)
+                    if dummy_loc is None:
+                        self.logger.warninga(
+                            f"Dummy location not found in {Chem.MolToSmiles(iso_mol)}"
+                        )
+                        continue
 
-                        for neighbor in atom.GetNeighbors():
-                            neighbor_idx = neighbor.GetIdx()
+                    heavy_idx.remove(dummy_loc)
 
-                            if neighbor_idx not in fragment_indices:
-                                attachment_point.add(neighbor_idx)
+                    hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
+                    new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
-                    if len(attachment_point) != 1:
-                        msg = "Must have exactly 1 attachment point"
-                        self.logger.error(msg)
-                        raise ValueError(msg)
-
-                    if not match_idx:
-                        msg = "SMARTS pattern did no match molecule"
-                        self.logger.error(msg)
-                        raise ValueError(msg)
-
-                    if len(match_idx) > 1:
-                        self.logger.warning("fragment matched more than once, choosing first")
-
-                    rwmol = Chem.RWMol(mol)
-                    indices_to_remove = set()
-
-                    for idx in match_idx[0]:
-                        indices_to_remove.add(idx)
-
-                    for idx in sorted(indices_to_remove, reverse=True):
-                        rwmol.RemoveAtom(idx)
-
-                    orig_order = list(range(rwmol.GetNumAtoms()))
-
-                    new_idx = next(iter(attachment_point)) - len(fragment_indices)
-                    new_order = orig_order.copy()
-                    new_order[0], new_order[new_idx] = new_order[new_idx], new_order[0]
-                    new_order
-
-                    iso._molecule = Chem.RenumberAtoms(rwmol, new_order)
+                    iso._molecule = reorder_atoms(new_mol, dummy_loc)
 
             command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*'"
         elif self.local_opt_ref.is_set:
