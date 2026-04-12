@@ -255,6 +255,7 @@ def save_sdf_library(
     split_strategy: Literal["schrodinger", "none"] = "none",
     append: bool = False,
     tags: list[str] | None = None,
+    kekulize: bool = True
 ) -> None:
     """
     Saves a list of IsomerCollection instances to an SDF file.
@@ -278,6 +279,8 @@ def save_sdf_library(
     """
     with file.open("a" if append else "w") as out:
         with Chem.SDWriter(out) as writer:
+            writer.SetKekulize(kekulize)
+
             if tags is not None:
                 writer.SetProps(tags)
             for i, mol in enumerate(mols):

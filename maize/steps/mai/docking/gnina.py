@@ -456,8 +456,10 @@ class GNINA(_GNINA):
         )
 
         ref: Isomer | str | None
+        kekulize = True
 
         if self.covalent_smarts.is_set:
+            kekulize = False
             fragment_mol = Chem.MolFromSmarts(self.covalent_smarts.value)
 
             if not has_one_dummy(fragment_mol):
@@ -478,8 +480,16 @@ class GNINA(_GNINA):
                     Chem.SanitizeMol(iso_mol)
 
                     match_idx = iso_mol.GetSubstructMatches(fragment_mol)
-                    heavy_idx = list(match_idx[0])
 
+                    if not match_idx:
+                        msg = "Fragment does not match molecule"
+                        self.logger.critical(msg)
+                        raise ValueError(msg)
+
+                    if len(match_idx) > 1:
+                        self.logger.warning("Fragment matches molecule more than once")
+
+                    heavy_idx = list(match_idx[0])
                     dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol)
 
                     if dummy_loc is None:
@@ -493,9 +503,25 @@ class GNINA(_GNINA):
                     hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
                     new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
+                    self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
+                    if dummy_loc > new_mol.GetNumAtoms():
+                        self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
+                        self.logger.debug(f"{Chem.MolToSmiles(iso_mol)}, {Chem.MolToSmiles(new_mol)}")
+
                     iso._molecule = reorder_atoms(new_mol, dummy_loc)
 
-            command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*'"
+            ref = self.inp_ref.receive_optional()
+
+            if ref is None:
+                 msg = "SDF references is required"
+                 self.logger.critical(msg)
+                 raise ValueError(msg)
+
+            ref_file = Path("ref.sdf")
+            ref.to_sdf(ref_file)
+
+            command += f"--autobox_ligand {ref_file.as_posix()} --autobox_add {self.autobox_add.value} "
+            command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
         elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
 
@@ -568,7 +594,7 @@ class GNINA(_GNINA):
         if not self.gpu.value or not (gpu_ok or mps_only):
             command += "--no_gpu "
 
-        save_sdf_library(inputs, mols, split_strategy="none")
+        save_sdf_library(inputs, mols, split_strategy="none", kekulize=kekulize)
 
         self.logger.debug(f"{command=}")
         self.run_command(
