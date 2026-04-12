@@ -363,10 +363,17 @@ def delete_fragmemt_from_mol(mol: Chem.Mol, indexes: list[int]) -> Chem.Mol:
 def reorder_atoms(mol: Chem.Mol, first_idx: int) -> Chem.Mol:
     """Reorder atoms in molecule with chosen atom to come first"""
 
+    fields = mol.GetPropsAsDict()
+    name = mol.GetProp("_Name")
+
     order = list(range(mol.GetNumAtoms()))
     order[0], order[first_idx] = order[first_idx], order[0]
 
     reordered_mol = Chem.RenumberAtoms(mol, order)
+    reordered_mol.SetProp("_Name", name)
+
+    for key, value in fields.items():
+        reordered_mol.SetProp(key, str(value))
 
     # optional
     atom = reordered_mol.GetAtomWithIdx(0)
@@ -506,21 +513,25 @@ class GNINA(_GNINA):
                     self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
                     if dummy_loc > new_mol.GetNumAtoms():
                         self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
-                        self.logger.debug(f"{Chem.MolToSmiles(iso_mol)}, {Chem.MolToSmiles(new_mol)}")
+                        self.logger.debug(
+                            f"{Chem.MolToSmiles(iso_mol)}, {Chem.MolToSmiles(new_mol)}"
+                        )
 
                     iso._molecule = reorder_atoms(new_mol, dummy_loc)
 
             ref = self.inp_ref.receive_optional()
 
             if ref is None:
-                 msg = "SDF references is required"
-                 self.logger.critical(msg)
-                 raise ValueError(msg)
+                msg = "SDF references is required"
+                self.logger.critical(msg)
+                raise ValueError(msg)
 
             ref_file = Path("ref.sdf")
             ref.to_sdf(ref_file)
 
-            command += f"--autobox_ligand {ref_file.as_posix()} --autobox_add {self.autobox_add.value} "
+            command += (
+                f"--autobox_ligand {ref_file.as_posix()} --autobox_add {self.autobox_add.value} "
+            )
             command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
         elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
