@@ -510,7 +510,7 @@ class GNINA(_GNINA):
                     hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
                     new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
-                    if dummy_loc > new_mol.GetNumAtoms():
+                    if dummy_loc >= new_mol.GetNumAtoms():
                         self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
                         self.logger.debug(
                             f"{Chem.MolToSmiles(iso_mol)}, {Chem.MolToSmiles(new_mol)}"
