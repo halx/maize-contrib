@@ -283,6 +283,7 @@ def save_sdf_library(
 
             if tags is not None:
                 writer.SetProps(tags)
+
             for i, mol in enumerate(mols):
                 for j, iso in enumerate(mol.molecules):
                     if split_strategy == "schrodinger":

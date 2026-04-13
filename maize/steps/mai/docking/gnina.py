@@ -377,7 +377,7 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
 
     for first_idx, atom in enumerate(mol.GetAtoms()):
         if atom.GetAtomMapNum() == map_num:
-            atomm.SetAtomMapNum(0)
+            atom.SetAtomMapNum(0)
             nmap += 1
 
     if nmap != 1:
@@ -528,14 +528,10 @@ class GNINA(_GNINA):
 
                     if not new_mol:
                         self.logger.warning(f"Dummy location could not be assigned in {Chem.MolToSmiles(iso_mol)}")
+                        continue
 
-                    if dummy_loc >= new_mol.GetNumAtoms():
-                        self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
-                        self.logger.debug(
-                            f"{Chem.MolToSmiles(iso_mol)}, {Chem.MolToSmiles(new_mol)}"
-                        )
-
-                    iso._molecule = reorder_atoms(new_mol, dummy_loc)
+                    iso._molecule = reorder_atoms(new_mol, map_num)
+                    self.logger.debug(f"{Chem.MolToSmiles(iso._molecule)}")
 
             ref = self.inp_ref.receive_optional()
 
