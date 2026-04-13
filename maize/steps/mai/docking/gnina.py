@@ -360,11 +360,28 @@ def delete_fragmemt_from_mol(mol: Chem.Mol, indexes: list[int]) -> Chem.Mol:
     return rwmol.GetMol()
 
 
-def reorder_atoms(mol: Chem.Mol, first_idx: int) -> Chem.Mol:
-    """Reorder atoms in molecule with chosen atom to come first"""
+def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
+    """Reorder atoms in molecule with chosen atom to come first
+
+    Note: atom map number of the tagged atom is removed!
+
+    :param mol: molecule
+    :param map_num: atom map number of atom that needs to come first
+    :retunrs: reordered molecule or None if there is not exactly one tagged atom
+    """
 
     fields = mol.GetPropsAsDict()
     name = mol.GetProp("_Name")
+
+    nmap = 0
+
+    for first_idx, atom in enumerate(mol.GetAtoms()):
+        if atom.GetAtomMapNum() == map_num:
+            atomm.SetAtomMapNum(0)
+            nmap += 1
+
+    if nmap != 1:
+        return None
 
     order = list(range(mol.GetNumAtoms()))
     order[0], order[first_idx] = order[first_idx], order[0]
@@ -374,10 +391,6 @@ def reorder_atoms(mol: Chem.Mol, first_idx: int) -> Chem.Mol:
 
     for key, value in fields.items():
         reordered_mol.SetProp(key, str(value))
-
-    # optional
-    atom = reordered_mol.GetAtomWithIdx(0)
-    atom.SetAtomMapNum(1)
 
     return reordered_mol
 
@@ -464,6 +477,7 @@ class GNINA(_GNINA):
 
         ref: Isomer | str | None
         kekulize = True
+        map_num = 99
 
         if self.covalent_smarts.is_set:
             kekulize = False
@@ -500,15 +514,20 @@ class GNINA(_GNINA):
                     dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol)
 
                     if dummy_loc is None:
-                        self.logger.warninga(
+                        self.logger.warning(
                             f"Dummy location not found in {Chem.MolToSmiles(iso_mol)}"
                         )
                         continue
 
+                    ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
+                    ap_atom.SetAtomMapNum(map_num)
                     heavy_idx.remove(dummy_loc)
 
                     hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
                     new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
+
+                    if not new_mol:
+                        self.logger.warning(f"Dummy location could not be assigned in {Chem.MolToSmiles(iso_mol)}")
 
                     if dummy_loc >= new_mol.GetNumAtoms():
                         self.logger.debug(f"{new_mol.GetNumAtoms()=}, {dummy_loc=}")
