@@ -363,7 +363,7 @@ def delete_fragmemt_from_mol(mol: Chem.Mol, indexes: list[int]) -> Chem.Mol:
 def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
     """Reorder atoms in molecule with chosen atom to come first
 
-    Note: atom map number of the tagged atom is removed!
+    Note: using isotope for tagging as this is also supported by OpenBabel
 
     :param mol: molecule
     :param map_num: atom map number of atom that needs to come first
@@ -373,14 +373,14 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
     fields = mol.GetPropsAsDict()
     name = mol.GetProp("_Name")
 
-    nmap = 0
+    num_iso = 0
 
     for first_idx, atom in enumerate(mol.GetAtoms()):
-        if atom.GetAtomMapNum() == map_num:
-            nmap += 1
+        if atom.GetIsotope() == map_num:
+            num_iso += 1
             break
 
-    if nmap != 1:
+    if num_iso != 1:
         return None
 
     order = list(range(mol.GetNumAtoms()))
@@ -526,7 +526,7 @@ class GNINA(_GNINA):
                         continue
 
                     ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
-                    ap_atom.SetAtomMapNum(map_num)
+                    ap_atom.SetIsotope(map_num)
                     heavy_idx.remove(dummy_loc)
 
                     hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
