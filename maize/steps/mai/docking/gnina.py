@@ -485,7 +485,7 @@ class GNINA(_GNINA):
         orig_dummy_loc = -1
 
         if self.covalent_kekulize.is_set:
-            kekulize = True
+            kekulize = self.covalent_kekulize.value
 
         if self.covalent_ref.is_set:
             kekulize = False
