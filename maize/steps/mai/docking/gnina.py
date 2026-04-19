@@ -472,13 +472,13 @@ class GNINA(_GNINA):
 
         command = (
             f"{self.runnable['gnina']} "
-            f"--ligand {inputs.as_posix()} --receptor {protein.as_posix()} "
+            f"--ligand {inputs.resolve().as_posix()} --receptor {protein.resolve().as_posix()} "
             f"--scoring {self.scoring.value} --cnn_scoring {self.cnn_scoring.value} "
             f"--exhaustiveness {self.exhaustiveness.value} --num_modes {self.n_poses.value} "
-            f"--cpu {self.n_jobs.value} --out {output.as_posix()} "
+            f"--cpu {self.n_jobs.value} --out {output.resolve().as_posix()} "
         )
 
-        ref: Isomer | str | None
+        rsef: Isomer | str | None
         kekulize = True
         map_num = 99
         is_covalent = False
@@ -552,7 +552,7 @@ class GNINA(_GNINA):
             ref.to_sdf(ref_file)
 
             command += (
-                f"--autobox_ligand {ref_file.as_posix()} --autobox_add {self.autobox_add.value} "
+                f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
             )
             command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
         elif self.local_opt_ref.is_set:
@@ -586,16 +586,16 @@ class GNINA(_GNINA):
             if isinstance(ref, str):
                 ref = find_mol(mols, value=ref)
             ref.to_sdf(ref_file)
-            command += f"--autobox_ligand {ref_file.as_posix()} "
+            command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
             command += f"--autobox_add {self.autobox_add.value} "
 
             if self.flex_dist.value > 0.1:
-                command += f"--flexdist_ligand {ref_file.as_posix()} "
+                command += f"--flexdist_ligand {ref_file.resolve().as_posix()} "
                 command += f"--flexdist {self.flex_dist.value} "
 
         # Treat the whole protein as the search area if we don't know the pocket location
         elif self.blind.value:
-            command += f"--autobox_ligand {protein.as_posix()} "
+            command += f"--autobox_ligand {protein.resolve().as_posix()} "
 
         # In this case we're supplying the complex, so no need for a search box
         elif self.score_only.value:
@@ -615,7 +615,7 @@ class GNINA(_GNINA):
         if self.cnn.is_set:  # builtin CNN models
             command += f"--cnn {self.cnn.value} "
         elif self.cnn_model.is_set:  # read CNN model from file
-            command += f"--cnn_model {' '.join(p.as_posix() for p in self.cnn_model.filepath)} "
+            command += f"--cnn_model {' '.join(p.resolve().as_posix() for p in self.cnn_model.filepath)} "
 
         command += f"--cnn_rotation {self.n_cnn_rot.value} "
 
