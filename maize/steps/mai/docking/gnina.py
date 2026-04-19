@@ -301,7 +301,7 @@ def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> lis
 
     :param match_idx: the subsstructure indexes in the molecule that match the fragment
     :param frag_mol: the matching fragment molecule
-    :returns: locations of dummy atom, attachment point
+    :returns: location of dummy atom
     """
 
     ap_indexes = []
@@ -388,9 +388,6 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
 
     reordered_mol = Chem.RenumberAtoms(mol, order)
     reordered_mol.SetProp("_Name", name)
-
-    # Tagging instead of reordering may be more robust
-    #reordered_mol.SetIntProp("GNINA_COVALENT_AP", first_idx)
 
     for key, value in fields.items():
         reordered_mol.SetProp(key, str(value))
@@ -482,11 +479,28 @@ class GNINA(_GNINA):
         kekulize = True
         map_num = 99
         is_covalent = False
+        orig_dummy_loc = -1
 
         if self.covalent_ref.is_set:
             kekulize = False
             is_covalent = True
             fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
+
+            # FIXME: assumes only one dummy with one neighbour
+            for atom in fragment_mol_ref.GetAtoms():
+                if atom.GetSymbol() == "*":
+                    orig_dummy_loc = atom.GetIdx()
+
+                    for neighbour_atom in atom.GetNeighbors():
+                        ap_frag_idx = neighbour_atom.GetIdx()
+
+                    break
+
+            frag_num_atoms = fragment_mol_ref.GetNumAtoms()
+            self.logger.debug(f"@@@ {frag_num_atoms=}")
+            self.logger.debug(f"@@@ {orig_dummy_loc=}")
+            self.logger.debug(f"@@@ {ap_frag_idx=}")
+
             fragment_mol = Chem.RemoveHs(fragment_mol_ref)
 
             if not has_one_dummy(fragment_mol):
@@ -539,7 +553,6 @@ class GNINA(_GNINA):
                         continue
 
                     iso._molecule = reorder_atoms(new_mol, map_num)
-                    self.logger.debug(f"{Chem.MolToSmiles(iso._molecule)}")
 
             ref = self.inp_ref.receive_optional()
 
@@ -551,9 +564,7 @@ class GNINA(_GNINA):
             ref_file = Path("ref.sdf")
             ref.to_sdf(ref_file)
 
-            command += (
-                f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
-            )
+            command += f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
             command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
         elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
@@ -615,7 +626,9 @@ class GNINA(_GNINA):
         if self.cnn.is_set:  # builtin CNN models
             command += f"--cnn {self.cnn.value} "
         elif self.cnn_model.is_set:  # read CNN model from file
-            command += f"--cnn_model {' '.join(p.resolve().as_posix() for p in self.cnn_model.filepath)} "
+            command += (
+                f"--cnn_model {' '.join(p.resolve().as_posix() for p in self.cnn_model.filepath)} "
+            )
 
         command += f"--cnn_rotation {self.n_cnn_rot.value} "
 
@@ -650,6 +663,16 @@ class GNINA(_GNINA):
                     if iso.name.startswith("_"):
                         iso.name = iso.name[1:]
 
+                    combined = Chem.CombineMols(iso._molecule, fragment_mol_ref)
+                    rw_mol = Chem.RWMol(combined)
+                    offset = iso._molecule.GetNumAtoms()
+
+                    # FIXME: assumes AP is first atom
+                    rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
+                    rw_mol.RemoveAtom(orig_dummy_loc + offset)
+                    iso._molecule = rw_mol.GetMol()
+                    self.logger.debug(f"@@@ {Chem.MolToSmiles(iso._molecule)}")
+
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                     try:
                         iso.add_score_tag(score_tag, agg=agg)
@@ -673,6 +696,7 @@ class GNINA(_GNINA):
         # FIXME: neeed a second Gnina pass when covalent docking to
         #        rescore the whole molecule and not just the fragment
         #        need to keep/extract the coordinates of the fragment
+        save_sdf_library(Path("_gnina.sdf"), mols, split_strategy="inchi", kekulize=kekulize)
         self.out.send(mols)
 
 
