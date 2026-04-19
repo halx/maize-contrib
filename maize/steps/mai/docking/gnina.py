@@ -123,10 +123,10 @@ class _GNINA(Node, register=False):
     cnn: Parameter[str] = Parameter(optional=True)
     """Name of a pre-trained CNN model or ensemble models to use"""
 
-    covalent_smarts: Parameter[str] = Parameter(optional=True)
-    """SMARTS of the fragment to remove from the molecule"""
+    covalent_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
+    """SDF of the fragment to remove from the molecule"""
 
-    # NOTE: this could also be x,y,z coordinates, not optional if covalent_smarts is set
+    # NOTE: this could also be x,y,z coordinates, not optional if covalent_ref is set
     covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
     """Attachment point of fragment as chain:resnum:atom_name"""
 
@@ -478,10 +478,13 @@ class GNINA(_GNINA):
         ref: Isomer | str | None
         kekulize = True
         map_num = 99
+        is_covalent = False
 
-        if self.covalent_smarts.is_set:
+        if self.covalent_ref.is_set:
             kekulize = False
-            fragment_mol = Chem.MolFromSmarts(self.covalent_smarts.value)
+            is_covalent = True
+            fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
+            fragment_mol = Chem.RemoveHs(fragment_mol_ref)
 
             if not has_one_dummy(fragment_mol):
                 msg = "Covalent SMARTS must have exactly one dummy atom"
@@ -527,7 +530,9 @@ class GNINA(_GNINA):
                     new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
                     if not new_mol:
-                        self.logger.warning(f"Dummy location could not be assigned in {Chem.MolToSmiles(iso_mol)}")
+                        self.logger.warning(
+                            f"Dummy location could not be assigned in {Chem.MolToSmiles(iso_mol)}"
+                        )
                         continue
 
                     iso._molecule = reorder_atoms(new_mol, map_num)
@@ -619,7 +624,8 @@ class GNINA(_GNINA):
         if not self.gpu.value or not (gpu_ok or mps_only):
             command += "--no_gpu "
 
-        save_sdf_library(inputs, mols, split_strategy="none", kekulize=kekulize)
+        # NOTE: inchi splitting relies on the molecule name to be the InChiKey
+        save_sdf_library(inputs, mols, split_strategy="inchi", kekulize=kekulize)
 
         self.logger.debug(f"{command=}")
         self.run_command(
@@ -637,6 +643,10 @@ class GNINA(_GNINA):
 
         for mol in mols:
             for iso in mol.molecules:
+                if is_covalent:  # unclear why Gnina uses a prefix to the InChiKey
+                    if iso.name.startswith("_"):
+                        iso.name = iso.name[1:]
+
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                     try:
                         iso.add_score_tag(score_tag, agg=agg)
@@ -656,6 +666,10 @@ class GNINA(_GNINA):
                 )
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
+
+        # FIXME: neeed a second Gnina pass when covalent docking to
+        #        rescore the whole molecule and not just the fragment
+        #        need to keep/extract the coordinates of the fragment
         self.out.send(mols)
 
 
