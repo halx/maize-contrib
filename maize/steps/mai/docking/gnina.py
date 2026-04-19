@@ -377,8 +377,8 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
 
     for first_idx, atom in enumerate(mol.GetAtoms()):
         if atom.GetAtomMapNum() == map_num:
-            atom.SetAtomMapNum(0)
             nmap += 1
+            break
 
     if nmap != 1:
         return None
@@ -388,6 +388,9 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
 
     reordered_mol = Chem.RenumberAtoms(mol, order)
     reordered_mol.SetProp("_Name", name)
+
+    # Tagging instead of reordering may be more robust
+    #reordered_mol.SetIntProp("GNINA_COVALENT_AP", first_idx)
 
     for key, value in fields.items():
         reordered_mol.SetProp(key, str(value))
