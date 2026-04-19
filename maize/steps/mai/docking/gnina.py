@@ -497,10 +497,6 @@ class GNINA(_GNINA):
                     break
 
             frag_num_atoms = fragment_mol_ref.GetNumAtoms()
-            self.logger.debug(f"@@@ {frag_num_atoms=}")
-            self.logger.debug(f"@@@ {orig_dummy_loc=}")
-            self.logger.debug(f"@@@ {ap_frag_idx=}")
-
             fragment_mol = Chem.RemoveHs(fragment_mol_ref)
 
             if not has_one_dummy(fragment_mol):
@@ -668,10 +664,11 @@ class GNINA(_GNINA):
                     offset = iso._molecule.GetNumAtoms()
 
                     # FIXME: assumes AP is first atom
-                    rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
-                    rw_mol.RemoveAtom(orig_dummy_loc + offset)
+                    if offset > 0:
+                        rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
+                        rw_mol.RemoveAtom(orig_dummy_loc + offset)
+
                     iso._molecule = rw_mol.GetMol()
-                    self.logger.debug(f"@@@ {Chem.MolToSmiles(iso._molecule)}")
 
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                     try:
