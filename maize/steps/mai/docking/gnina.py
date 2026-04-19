@@ -130,6 +130,9 @@ class _GNINA(Node, register=False):
     covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
     """Attachment point of fragment as chain:resnum:atom_name"""
 
+    covalent_kekulize: Flag = Flag(default=True)
+    """Seems that in covalent docking structure may not kekulize"""
+
     local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
     """Reference structure filename for local optimization: ligands will be aligned to it"""
 
@@ -481,6 +484,9 @@ class GNINA(_GNINA):
         is_covalent = False
         orig_dummy_loc = -1
 
+        if self.covalent_kekulize.is_set:
+            kekulize = True
+
         if self.covalent_ref.is_set:
             kekulize = False
             is_covalent = True
@@ -690,10 +696,6 @@ class GNINA(_GNINA):
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
 
-        # FIXME: neeed a second Gnina pass when covalent docking to
-        #        rescore the whole molecule and not just the fragment
-        #        need to keep/extract the coordinates of the fragment
-        save_sdf_library(Path("_gnina.sdf"), mols, split_strategy="inchi", kekulize=kekulize)
         self.out.send(mols)
 
 
