@@ -454,6 +454,8 @@ class GNINA(_GNINA):
 
     def run(self) -> None:
         mols = self.inp.receive()
+        smilies = {mol.name: mol.smiles for mol in mols}
+
         protein = self.receptor.filepath
         inputs = Path("mols.sdf")
         output = Path("output.sdf")
@@ -657,7 +659,7 @@ class GNINA(_GNINA):
         # inchi splitting will discard duplicates which can happen when
         # REINVENT basically generates the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
-        mols = load_sdf_library(output, split_strategy="none", sanitize=False, renumber=False)
+        mols = load_sdf_library(output, split_strategy="inchi", sanitize=False, renumber=False)
 
         for mol in mols:
             for iso in mol.molecules:
@@ -674,6 +676,7 @@ class GNINA(_GNINA):
                         rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
                         rw_mol.RemoveAtom(orig_dummy_loc + offset)
 
+                    Chem.SanitizeMol(rw_mol)
                     iso._molecule = rw_mol.GetMol()
 
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
@@ -695,6 +698,12 @@ class GNINA(_GNINA):
                 )
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
+
+            # recover SMILES as they are the identifier for REINVENT
+            for name, smiles in smilies.items():
+                if mol.name == name:
+                    mol.smiles = smiles
+                    break
 
         self.out.send(mols)
 
