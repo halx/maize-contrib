@@ -114,6 +114,11 @@ class _GNINA(Node, register=False):
     With this option, neither a reference nor search_center need to be provided.
     """
 
+    local_only: Flag = Flag(default=False)
+    """
+    If ``True``, will only do local only optimization and ligand minimization
+    """
+
     minimize: Flag = Flag(default=False)
     """Whether to just minimize the passed-in conformation"""
 
@@ -619,6 +624,9 @@ class GNINA(_GNINA):
         # Same as above, start from the complex and just minimize without search
         elif self.minimize.value:
             command += "--minimize "
+
+        elif self.local_only.value:
+            command += "--local_only --minimize "
 
         # In all other cases we need to tell GNINA where to look for a pocket
         else:
