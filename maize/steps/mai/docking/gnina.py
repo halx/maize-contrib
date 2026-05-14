@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import rdkit.Chem.AllChem as Chem
+from rdkit.Chem.MolStandardize import rdMolStandardize
 import numpy as np
 from numpy.typing import NDArray
 import pytest
@@ -524,22 +525,29 @@ class GNINA(_GNINA):
 
             covalent_ap = self.covalent_ap_fragment.value
 
+            enumerator = rdMolStandardize.TautomerEnumerator()
+            fragment_mol_cmp = enumerator.Canonicalize(fragment_mol)
+
+            uncharger = rdMolStandardize.Uncharger()
+            fragment_mol_cmp = uncharger.uncharge(fragment_mol_cmp)
+
             for mol in mols:
                 for iso in mol.molecules:
                     iso_mol = iso._molecule
                     Chem.SanitizeMol(iso_mol)
 
-                    iso_mol_noH = Chem.RemoveHs(iso_mol)  # ignore e.g. protonation states
-                    match_idx = iso_mol_noH.GetSubstructMatches(fragment_mol, useChirality=False)
+                    # clean-up to deal with protonation, charge and tautomer states
+                    iso_mol_noH = Chem.RemoveHs(iso_mol)
+                    iso_mol_cmp = enumerator.Canonicalize(iso_mol_noH)
+                    iso_mol_cmp = uncharger.uncharge(iso_mol_cmp)
+
+                    match_idx = iso_mol_cmp.GetSubstructMatches(fragment_mol_cmp, useChirality=False)
 
                     # gypsum may generate non-matching variants e.g. tautomers
                     if not match_idx:
                         msg = "Fragment does not match molecule"
-                        self.logger.debug(f"=== {Chem.MolToSmiles(fragment_mol)}")
-                        self.logger.debug(f"=== {Chem.MolToSmiles(iso_mol_noH)}")
-                        self.logger.warning(msg)
+                        self.logger.debug(msg)
                         continue
-                        #raise ValueError(msg)
 
                     if len(match_idx) > 1:
                         self.logger.warning("Fragment matches molecule more than once")
