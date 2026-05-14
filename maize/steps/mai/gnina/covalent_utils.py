@@ -1,7 +1,14 @@
+"""Support routines for covalent docking with Gnina"""
+
+from rdkit import Chem
+from rdkit.Chem.MolStandardize import rdMolStandardize
+
 from maize.utilities.chem import IsomerCollection
 
+MAP_NUM = 99
 
-def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> list[int] | None:
+
+def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> int | None:
     """Find index of the dummy atom which will be the attachment point
 
     The indexes are the locations in the matching list of the dummy atom.
@@ -82,6 +89,7 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
     name = mol.GetProp("_Name")
 
     num_iso = 0
+    first_idx = -1
 
     for first_idx, atom in enumerate(mol.GetAtoms()):
         if atom.GetIsotope() == map_num:
@@ -118,7 +126,7 @@ def has_one_dummy(mol: Chem.Mol) -> bool:
     return True
 
 
-def combine_iso_with_fragment(fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int | Any):
+def combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int):
     if iso.name.startswith("_"):  # why does Gnina do that?
         iso.name = iso.name[1:]
 
@@ -139,11 +147,10 @@ def combine_iso_with_fragment(fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int
     iso._molecule = rw_mol.GetMol()
 
 
-MAP_NUM = 99
 
 
-def prepare_mols_for_covalent(mols: IsomerCollection, fragment_mol_ref: Chem.Mol):
-    orig_dummy_loc = -1
+def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):
+    orig_dummy_loc = ap_frag_idx = -1
 
     # FIXME: assumes only one dummy with one neighbour
     for atom in fragment_mol_ref.GetAtoms():
@@ -159,12 +166,6 @@ def prepare_mols_for_covalent(mols: IsomerCollection, fragment_mol_ref: Chem.Mol
 
     if not has_one_dummy(fragment_mol):
         msg = "Covalent SMARTS must have exactly one dummy atom"
-        self.logger.critical(msg)
-        raise ValueError(msg)
-
-    if not self.covalent_ap_fragment.is_set:
-        msg = "Covalent docking requires fragment attachment point"
-        self.logger.critical(msg)
         raise ValueError(msg)
 
     enumerator = rdMolStandardize.TautomerEnumerator()
@@ -199,7 +200,7 @@ def prepare_mols_for_covalent(mols: IsomerCollection, fragment_mol_ref: Chem.Mol
                 continue
 
             ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
-            ap_atom.SetIsotope(map_num)
+            ap_atom.SetIsotope(MAP_NUM)
             heavy_idx.remove(dummy_loc)
 
             hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
@@ -208,12 +209,12 @@ def prepare_mols_for_covalent(mols: IsomerCollection, fragment_mol_ref: Chem.Mol
             if not new_mol:
                 continue
 
-            iso._molecule = reorder_atoms(new_mol, map_num)
+            iso._molecule = reorder_atoms(new_mol, MAP_NUM)
 
     return ap_frag_idx, orig_dummy_loc
 
 
-def prepare_mols_for_local(mols: IsomerCollection, ref_mol: Chem.Mol):
+def prepare_mols_for_local(mols: list[IsomerCollection], ref_mol: Chem.Mol):
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
@@ -227,7 +228,9 @@ def prepare_mols_for_local(mols: IsomerCollection, ref_mol: Chem.Mol):
                 atom_map_initial = list(zip(initial_match, range(iso_mol.GetNumAtoms())))
 
                 try:
-                    _ = Chem.AlignMol(iso_mol, ref_mol, atomMap=atom_map_initial)  # in-place alignment!
+                    _ = Chem.AlignMol(
+                        iso_mol, ref_mol, atomMap=atom_map_initial
+                    )  # in-place alignment!
                 except ValueError:  # Bad Conformer Id
                     pass
 

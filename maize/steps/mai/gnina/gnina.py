@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import rdkit.Chem.AllChem as Chem
-from rdkit.Chem.MolStandardize import rdMolStandardize
 import numpy as np
 from numpy.typing import NDArray
 import pytest
@@ -13,8 +12,11 @@ import pytest
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
 
-from maize.steps.mai.gnina.covalent_utils import combine_iso_with_fragment, prepare_mols_for_covalent, \
-    prepare_mols_for_local
+from maize.steps.mai.gnina.covalent_utils import (
+    combine_iso_with_fragment,
+    prepare_mols_for_covalent,
+    prepare_mols_for_local,
+)
 from maize.utilities.chem import Isomer, IsomerCollection, Conformer
 from maize.utilities.chem.chem import find_mol, load_sdf_library, merge_libraries, save_sdf_library
 from maize.utilities.testing import TestRig
@@ -345,6 +347,9 @@ class GNINA(_GNINA):
     tag_nan_score: Parameter[str] = Parameter(optional=True)
 
     def run(self) -> None:
+        protein = self.receptor.filepath
+        inputs = Path("mols.sdf")
+        output = Path("output.sdf")
 
         command = (
             f"{self.runnable['gnina']} "
@@ -369,10 +374,6 @@ class GNINA(_GNINA):
         mols = self.inp.receive()
         smilies = {mol.name: mol.smiles for mol in mols}
 
-        protein = self.receptor.filepath
-        inputs = Path("mols.sdf")
-        output = Path("output.sdf")
-
         ref: Isomer | str | None
         kekulize = True
         is_covalent = False
@@ -386,6 +387,11 @@ class GNINA(_GNINA):
 
             fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
             ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+
+            if not self.covalent_ap_fragment.is_set:
+                msg = "Covalent docking requires fragment attachment point"
+                self.logger.critical(msg)
+                raise ValueError(msg)
 
             ref = self.inp_ref.receive_optional()
 
@@ -478,7 +484,7 @@ class GNINA(_GNINA):
         for mol in mols:
             for iso in mol.molecules:
                 if is_covalent:
-                    combine_iso_with_fragment(fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
+                    combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
 
                 self._tag_iso(iso)
                 self.logger.info(
