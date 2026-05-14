@@ -12,6 +12,9 @@ import pytest
 
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
+
+from maize.steps.mai.gnina.covalent_utils import combine_iso_with_fragment, prepare_mols_for_covalent, \
+    prepare_mols_for_local
 from maize.utilities.chem import Isomer, IsomerCollection, Conformer
 from maize.utilities.chem.chem import find_mol, load_sdf_library, merge_libraries, save_sdf_library
 from maize.utilities.testing import TestRig
@@ -302,123 +305,6 @@ class GNINAEnsemble(_GNINA):
         self.out.send(mols)
 
 
-def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> list[int] | None:
-    """Find index of the dummy atom which will be the attachment point
-
-    The indexes are the locations in the matching list of the dummy atom.
-    The matching list contains the indexes of the heavy atoms of the molecule.
-
-    :param match_idx: the subsstructure indexes in the molecule that match the fragment
-    :param frag_mol: the matching fragment molecule
-    :returns: location of dummy atom
-    """
-
-    ap_indexes = []
-
-    for idx in range(len(match_idx)):
-        frag_atom = frag_mol.GetAtomWithIdx(idx)
-
-        if frag_atom.GetSymbol() == "*":
-            ap_indexes.append(match_idx[idx])
-
-    if len(ap_indexes) != 1:  # only one AP
-        return None
-
-    return ap_indexes[0]
-
-
-def find_hydrogens(mol: Chem.Mol, heavy_idx: list[int]) -> list:
-    """Find the hydrogen from the fragment in the molecule
-
-    The fragment is expected to contain heavy atoms only
-
-    :param mol: molecule
-    :param heavy_idx: indexes of heavy atoms correspoding to fragment
-    :returns: hydrogens attached to the match
-    """
-
-    hydrogen_idx = []
-
-    for idx in heavy_idx:
-        atom = mol.GetAtomWithIdx(idx)
-
-        for neighbor_atom in atom.GetNeighbors():
-            if neighbor_atom.GetAtomicNum() == 1:  # skip H attached to dummy
-                hydrogen_idx.append(neighbor_atom.GetIdx())
-
-    return hydrogen_idx
-
-
-def delete_fragmemt_from_mol(mol: Chem.Mol, indexes: list[int]) -> Chem.Mol:
-    """Delete fragment from molecule
-
-    :param mol: molecule
-    :param indexes: indexex of all atoms to delete
-    :returns: molecule with remaining atoms
-    """
-
-    rwmol = Chem.RWMol(mol)
-    indices_to_remove = set()
-
-    for idx in indexes:
-        indices_to_remove.add(idx)
-
-    for idx in sorted(indices_to_remove, reverse=True):
-        rwmol.RemoveAtom(idx)
-
-    return rwmol.GetMol()
-
-
-def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
-    """Reorder atoms in molecule with chosen atom to come first
-
-    Note: using isotope for tagging as this is also supported by OpenBabel
-
-    :param mol: molecule
-    :param map_num: atom map number of atom that needs to come first
-    :retunrs: reordered molecule or None if there is not exactly one tagged atom
-    """
-
-    fields = mol.GetPropsAsDict()
-    name = mol.GetProp("_Name")
-
-    num_iso = 0
-
-    for first_idx, atom in enumerate(mol.GetAtoms()):
-        if atom.GetIsotope() == map_num:
-            num_iso += 1
-            break
-
-    if num_iso != 1:
-        return None
-
-    order = list(range(mol.GetNumAtoms()))
-    order[0], order[first_idx] = order[first_idx], order[0]
-
-    reordered_mol = Chem.RenumberAtoms(mol, order)
-    reordered_mol.SetProp("_Name", name)
-
-    for key, value in fields.items():
-        reordered_mol.SetProp(key, str(value))
-
-    return reordered_mol
-
-
-def has_one_dummy(mol: Chem.Mol) -> bool:
-    """Check if molecule has exactly one dummy"""
-
-    n_dummies = 0
-
-    for atom in mol.GetAtoms():
-        if atom.GetAtomicNum() == 0:
-            n_dummies += 1
-
-    if n_dummies != 1:
-        return False
-
-    return True
-
-
 class GNINA(_GNINA):
     """
     Docks molecules with GNINA.
@@ -459,12 +345,14 @@ class GNINA(_GNINA):
     tag_nan_score: Parameter[str] = Parameter(optional=True)
 
     def run(self) -> None:
-        mols = self.inp.receive()
-        smilies = {mol.name: mol.smiles for mol in mols}
 
-        protein = self.receptor.filepath
-        inputs = Path("mols.sdf")
-        output = Path("output.sdf")
+        command = (
+            f"{self.runnable['gnina']} "
+            f"--ligand {inputs.resolve().as_posix()} --receptor {protein.resolve().as_posix()} "
+            f"--scoring {self.scoring.value} --cnn_scoring {self.cnn_scoring.value} "
+            f"--exhaustiveness {self.exhaustiveness.value} --num_modes {self.n_poses.value} "
+            f"--cpu {self.n_jobs.value} --out {output.resolve().as_posix()} "
+        )
 
         # Get GPU status
         mps_only = False
@@ -478,19 +366,16 @@ class GNINA(_GNINA):
             "GPU %savailable%s", "not " if not gpu_ok else "", ", MPS required" if mps_only else ""
         )
 
-        command = (
-            f"{self.runnable['gnina']} "
-            f"--ligand {inputs.resolve().as_posix()} --receptor {protein.resolve().as_posix()} "
-            f"--scoring {self.scoring.value} --cnn_scoring {self.cnn_scoring.value} "
-            f"--exhaustiveness {self.exhaustiveness.value} --num_modes {self.n_poses.value} "
-            f"--cpu {self.n_jobs.value} --out {output.resolve().as_posix()} "
-        )
+        mols = self.inp.receive()
+        smilies = {mol.name: mol.smiles for mol in mols}
 
-        rsef: Isomer | str | None
+        protein = self.receptor.filepath
+        inputs = Path("mols.sdf")
+        output = Path("output.sdf")
+
+        ref: Isomer | str | None
         kekulize = True
-        map_num = 99
         is_covalent = False
-        orig_dummy_loc = -1
 
         if self.covalent_kekulize.is_set:
             kekulize = self.covalent_kekulize.value
@@ -498,83 +383,9 @@ class GNINA(_GNINA):
         if self.covalent_ref.is_set:
             kekulize = False
             is_covalent = True
+
             fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
-
-            # FIXME: assumes only one dummy with one neighbour
-            for atom in fragment_mol_ref.GetAtoms():
-                if atom.GetSymbol() == "*":
-                    orig_dummy_loc = atom.GetIdx()
-
-                    for neighbour_atom in atom.GetNeighbors():
-                        ap_frag_idx = neighbour_atom.GetIdx()
-
-                    break
-
-            frag_num_atoms = fragment_mol_ref.GetNumAtoms()
-            fragment_mol = Chem.RemoveHs(fragment_mol_ref)
-
-            if not has_one_dummy(fragment_mol):
-                msg = "Covalent SMARTS must have exactly one dummy atom"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
-            if not self.covalent_ap_fragment.is_set:
-                msg = "Covalent docking requires fragment attachment point"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
-            covalent_ap = self.covalent_ap_fragment.value
-
-            enumerator = rdMolStandardize.TautomerEnumerator()
-            fragment_mol_cmp = enumerator.Canonicalize(fragment_mol)
-
-            uncharger = rdMolStandardize.Uncharger()
-            fragment_mol_cmp = uncharger.uncharge(fragment_mol_cmp)
-
-            for mol in mols:
-                for iso in mol.molecules:
-                    iso_mol = iso._molecule
-                    Chem.SanitizeMol(iso_mol)
-
-                    # clean-up to deal with protonation, charge and tautomer states
-                    iso_mol_noH = Chem.RemoveHs(iso_mol)
-                    iso_mol_cmp = enumerator.Canonicalize(iso_mol_noH)
-                    iso_mol_cmp = uncharger.uncharge(iso_mol_cmp)
-
-                    match_idx = iso_mol_cmp.GetSubstructMatches(fragment_mol_cmp, useChirality=False)
-
-                    # gypsum may generate non-matching variants e.g. tautomers
-                    if not match_idx:
-                        msg = "Fragment does not match molecule"
-                        self.logger.debug(msg)
-                        continue
-
-                    if len(match_idx) > 1:
-                        self.logger.warning("Fragment matches molecule more than once")
-
-                    heavy_idx = list(match_idx[0])
-                    dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol)
-
-                    if dummy_loc is None:
-                        self.logger.warning(
-                            f"Dummy location not found in {Chem.MolToSmiles(iso_mol)}"
-                        )
-                        continue
-
-                    ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
-                    ap_atom.SetIsotope(map_num)
-                    heavy_idx.remove(dummy_loc)
-
-                    hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
-                    new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
-
-                    if not new_mol:
-                        self.logger.warning(
-                            f"Dummy location could not be assigned in {Chem.MolToSmiles(iso_mol)}"
-                        )
-                        continue
-
-                    iso._molecule = reorder_atoms(new_mol, map_num)
+            ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
 
             ref = self.inp_ref.receive_optional()
 
@@ -586,31 +397,13 @@ class GNINA(_GNINA):
             ref_file = Path("ref.sdf")
             ref.to_sdf(ref_file)
 
+            covalent_ap = self.covalent_ap_fragment.value
+
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
             command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
         elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
-
-            for mol in mols:
-                for iso in mol.molecules:
-                    iso_mol = iso._molecule
-                    Chem.SanitizeMol(iso_mol)
-
-                    try:  # 3D constraint embedding
-                        iso_mol = Chem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
-                    except ValueError:  # embedding based on 2D match
-                        # FIXME: multiple matches
-                        initial_match = iso_mol.GetSubstructMatch(ref_mol)
-                        atom_map_initial = list(zip(initial_match, range(iso_mol.GetNumAtoms())))
-
-                        try:
-                            # in-place alignment!
-                            rmsd = Chem.AlignMol(iso_mol, ref_mol, atomMap=atom_map_initial)
-                            self.logger.debug(f"{rmsd=}")
-                        except ValueError:  # Bad Conformer Id
-                            pass
-
-                    iso._molecule = iso_mol
+            prepare_mols_for_local(mols, ref_mol)
 
             # only local optimization and minimization of the whole ligand
             command += "--local_only --minimize "
@@ -684,41 +477,10 @@ class GNINA(_GNINA):
 
         for mol in mols:
             for iso in mol.molecules:
-                if is_covalent:  # unclear why Gnina uses a prefix to the InChiKey
-                    if iso.name.startswith("_"):
-                        iso.name = iso.name[1:]
+                if is_covalent:
+                    combine_iso_with_fragment(fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
 
-                    combined = Chem.CombineMols(iso._molecule, fragment_mol_ref)
-                    rw_mol = Chem.RWMol(combined)
-                    offset = iso._molecule.GetNumAtoms()
-
-                    # FIXME: assumes AP is first atom
-                    if offset > 0:
-                        rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
-                        rw_mol.RemoveAtom(orig_dummy_loc + offset)
-
-                    try:
-                        Chem.SanitizeMol(rw_mol)
-                    except (Chem.KekulizeException, Chem.AtomValenceException) as error:
-                        self.logger.debug(f"Sanitization failed: {error}")
-                        pass
-
-                    iso._molecule = rw_mol.GetMol()
-
-                for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
-                    try:
-                        iso.add_score_tag(score_tag, agg=agg)
-
-                        for conf in iso.conformers:
-                            conf.add_score_tag(score_tag, agg=agg)
-
-                        self.logger.debug(f"Found score tag {score_tag}")
-                    except KeyError:
-                        continue
-
-                iso.primary_score_tag = self.PRIMARY_SCORE_TAG
-                iso.set_tag("score_type", "oracle")
-                iso.set_tag("origin", self.name)
+                self._tag_iso(iso)
                 self.logger.info(
                     "Parsed isomer '%s', score %s", iso.name or iso.inchi, iso.primary_score
                 )
@@ -732,6 +494,20 @@ class GNINA(_GNINA):
                     break
 
         self.out.send(mols)
+
+    def _tag_iso(self, iso: Isomer):
+        for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
+            try:
+                iso.add_score_tag(score_tag, agg=agg)
+
+                for conf in iso.conformers:
+                    conf.add_score_tag(score_tag, agg=agg)
+            except KeyError:
+                continue
+
+        iso.primary_score_tag = self.PRIMARY_SCORE_TAG
+        iso.set_tag("score_type", "oracle")
+        iso.set_tag("origin", self.name)
 
 
 # 1UYD previously published with Icolos (IcolosData/molecules/1UYD)
