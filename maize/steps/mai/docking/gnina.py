@@ -652,8 +652,9 @@ class GNINA(_GNINA):
         if not self.gpu.value or not (gpu_ok or mps_only):
             command += "--no_gpu "
 
-        # NOTE: inchi splitting relies on the molecule name to be the InChiKey
-        save_sdf_library(inputs, mols, split_strategy="inchi", kekulize=kekulize)
+        # NOTE: "schrodinger" splitting would change molecule name to "mol:iso"
+        #       None leaves it unmodified
+        save_sdf_library(inputs, mols, split_strategy=None, kekulize=kekulize)
 
         self.logger.debug(f"{command=}")
         self.run_command(
@@ -664,8 +665,7 @@ class GNINA(_GNINA):
         )
 
         # FIXME: review splitting strategy
-        # inchi splitting will discard duplicates which can happen when
-        # REINVENT basically generates the same molecule e.g.
+        # Edge case: REINVENT may generate the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
         mols = load_sdf_library(output, split_strategy="inchi", sanitize=False, renumber=False)
 
@@ -684,7 +684,12 @@ class GNINA(_GNINA):
                         rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
                         rw_mol.RemoveAtom(orig_dummy_loc + offset)
 
-                    Chem.SanitizeMol(rw_mol)
+                    try:
+                        Chem.SanitizeMol(rw_mol)
+                    except (Chem.KekulizeException, Chem.AtomValenceException) as error:
+                        self.logger.debug(f"Sanitization failed: {error}")
+                        pass
+
                     iso._molecule = rw_mol.GetMol()
 
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):

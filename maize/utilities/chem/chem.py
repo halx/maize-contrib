@@ -390,7 +390,12 @@ def load_sdf_or_mae_library(
 
                 mols[mol_idx][iso_idx].append(mol)
 
-            # Split based on InChI key: moleculeinchi-isomerinchi (e.g. ABCDEF-GHIJKL-M)
+            # Split based on InChI key: moleculeinchi-isomerinchi
+            # From Wikipedia:
+            # xxxxxxxxxxxxxx-yyyyyyyyfv-p
+            # The first 14 characters (x) result from a SHA-256 hash of the connectivity information (the main layer and /q sublayer of the charge layer) of the InChI. The mapping to letters is a "base-26" encoding.
+            # The second part consists of 8 characters (y) resulting from a hash of the remaining ("minor") layers of the InChI, a single character (f) indicating the kind of InChIKey (S for standard and N for nonstandard), and a character (v) indicating the version of InChI used (currently A for version 1).
+            # Finally, the single character (p) at the end indicates the protonation of the core parent structure, corresponding to the /p sublayer of the charge layer (N for no protonation, O, P, ... if protons should be added and M, L, ... if they should be removed.)
             elif split_strategy == "inchi":
                 mol_part, *iso_part = iso.inchi.split("-")
                 mols[mol_part]["-".join(iso_part)].append(mol)
