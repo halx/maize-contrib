@@ -23,8 +23,8 @@ from maize.steps.mai.molecule.mol import SaveIsomers
 from maize.steps.plumbing import Copy, MergeLists
 from maize.utilities.execution import JobResourceConfig
 
-from maize.steps.mai.docking import AutoDockGPU, GNINA
-from maize.steps.mai.gnina.gnina import CNNScoreType
+from maize.steps.mai.docking import AutoDockGPU
+from maize.steps.mai.gnina import GNINA, CNNScoreType
 from maize.steps.mai.md import (
     OpenRFE,
     MakeAbsolute,

@@ -17,7 +17,6 @@ from .adv import (
 from .rocs import ROCS
 from .glide import Glide
 from .glide_grid_generation import GlideGridGenerator
-from .gnina.gnina import GNINA
 from .aevplig import AEVPLIG
 from .boltz2 import Boltz2
 
@@ -34,6 +33,5 @@ __all__ = [
     "PreparePDBQT",
     "Boltz2",
     "ROCS",
-    "GNINA",
     "AEVPLIG",
 ]
