@@ -529,12 +529,17 @@ class GNINA(_GNINA):
                     iso_mol = iso._molecule
                     Chem.SanitizeMol(iso_mol)
 
-                    match_idx = iso_mol.GetSubstructMatches(fragment_mol)
+                    iso_mol_noH = Chem.RemoveHs(iso_mol)  # ignore e.g. protonation states
+                    match_idx = iso_mol_noH.GetSubstructMatches(fragment_mol, useChirality=False)
 
+                    # gypsum may generate non-matching variants e.g. tautomers
                     if not match_idx:
                         msg = "Fragment does not match molecule"
-                        self.logger.critical(msg)
-                        raise ValueError(msg)
+                        self.logger.debug(f"=== {Chem.MolToSmiles(fragment_mol)}")
+                        self.logger.debug(f"=== {Chem.MolToSmiles(iso_mol_noH)}")
+                        self.logger.warning(msg)
+                        continue
+                        #raise ValueError(msg)
 
                     if len(match_idx) > 1:
                         self.logger.warning("Fragment matches molecule more than once")
