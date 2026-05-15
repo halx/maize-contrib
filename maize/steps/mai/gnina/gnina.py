@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
 
-from maize.steps.mai.gnina.covalent_utils import (
+from maize.steps.mai.gnina.fragment_growing import (
     combine_iso_with_fragment,
     prepare_mols_for_covalent,
     prepare_mols_for_local,

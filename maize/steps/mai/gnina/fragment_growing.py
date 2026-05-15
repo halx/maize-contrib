@@ -1,14 +1,129 @@
-"""Support routines for covalent docking with Gnina"""
+"""Fragment growing using Gnina docking
+
+Supports covalent docking and local-only optimization.
+
+For covalent docking a fragment 3D molecule with hydrogen's, a single atom with
+a single neighbour atom is needed.  The fragment is substructure-matched
+against the molecule after tautomer canonicalization and uncharging to allow
+comparison with prepared ligands.  The fragment is deleted from the molecule
+for covalent docking (the receptor contains a copy of the fragment in the
+binding site) ignoring the dummy atom and marking its neighbour as attachment
+point (AP).  The second fragment is reordered such that the AP is the first
+atom.
+
+For local-only optimization, constraint conformer generation with the fragment
+as refence is carried out to generate a 3D molecule keeping the reference
+conformation.  The conformer is aligned to the reference coordinates (the
+receptor contains a copy of the fragment in the binding site).
+"""
 
 import logging
 
 from rdkit import Chem
-from rdkit.Chem.MolStandardize import rdMolStandardize
+from rdkit.Chem.MolStandardize.rdMolStandardize import TautomerEnumerator, Uncharger
 
 from maize.utilities.chem import IsomerCollection
 
 logger = logging.getLogger("run")
 MAP_NUM = 99
+
+
+def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):
+    ap_frag_idx, orig_dummy_loc = find_dummy(fragment_mol_ref)
+
+    if ap_frag_idx == -1:
+        msg = "Covalent reference must have exactly one dummy atom"
+        raise ValueError(msg)
+
+    fragment_mol_cmp = Chem.RemoveHs(fragment_mol_ref)
+
+    enumerator = TautomerEnumerator()
+    fragment_mol_cmp = enumerator.Canonicalize(fragment_mol_cmp)
+
+    uncharger = Uncharger()
+    fragment_mol_cmp = uncharger.uncharge(fragment_mol_cmp)
+
+    for mol in mols:
+        for iso in mol.molecules:
+            iso_mol = iso._molecule
+            Chem.SanitizeMol(iso_mol)
+
+            match_idx = get_substructure(iso_mol, fragment_mol_cmp, enumerator, uncharger)
+
+            if not match_idx or len(match_idx) > 1:
+                continue
+
+            heavy_idx = list(match_idx[0])
+            dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol_ref)
+
+            if dummy_loc is None:
+                continue
+
+            ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
+            ap_atom.SetIsotope(MAP_NUM)
+            heavy_idx.remove(dummy_loc)
+
+            hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
+            new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
+
+            if not new_mol:
+                continue
+
+            iso._molecule = reorder_atoms(new_mol, MAP_NUM)
+
+    return ap_frag_idx, orig_dummy_loc
+
+
+def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
+    """Find dummy atom index and its neighbour atom index
+
+    Expects exactly one dummy atom in the molecule attached to exactly one
+    neighbour atom.
+
+    :param mol: molecule with dummy
+    :returns: indices of dummy and neighbour or -1 if more than one dummy or neighbour
+    """
+
+    n_dummies = 0
+    n_indices = 0
+    orig_dummy_loc = ap_frag_idx = -1
+
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol() == "*":
+            orig_dummy_loc = atom.GetIdx()
+
+            for neighbour_atom in atom.GetNeighbors():
+                n_indices += 1
+                ap_frag_idx = neighbour_atom.GetIdx()
+
+    if n_dummies != 1 or n_indices != 1:
+        return -1, -1
+
+    return ap_frag_idx, orig_dummy_loc
+
+
+def get_substructure(
+    mol1: Chem.Mol, mol2: Chem.Mol, tautomer_enumerator: TautomerEnumerator, uncharger: Uncharger
+) -> list[list[int]]:
+    """Substructure search on canonical tautomer and charge neutral molecules
+
+    This allows better comparing a fragment with a molecule that has undergone
+    ligand preparation.
+
+    :param mol1: molecule to search for substructure
+    :param mol2: expected substructure
+    :param tautomer_enumerator: tautomer enumerator
+    :param uncharger; uncharger
+    :returns: the matches indices
+    """
+
+    mol1 = Chem.RemoveHs(mol1)
+    mol1 = tautomer_enumerator.Canonicalize(mol1)
+    mol1 = uncharger.uncharge(mol1)
+
+    match_idx = mol1.GetSubstructMatches(mol2, useChirality=False)
+
+    return match_idx
 
 
 def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> int | None:
@@ -114,21 +229,6 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
     return reordered_mol
 
 
-def has_one_dummy(mol: Chem.Mol) -> bool:
-    """Check if molecule has exactly one dummy"""
-
-    n_dummies = 0
-
-    for atom in mol.GetAtoms():
-        if atom.GetAtomicNum() == 0:
-            n_dummies += 1
-
-    if n_dummies != 1:
-        return False
-
-    return True
-
-
 def combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int):
     if iso.name.startswith("_"):  # why does Gnina do that?
         iso.name = iso.name[1:]
@@ -148,71 +248,6 @@ def combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
         pass
 
     iso._molecule = rw_mol.GetMol()
-
-
-def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):
-    orig_dummy_loc = ap_frag_idx = -1
-
-    # FIXME: assumes only one dummy with one neighbour
-    for atom in fragment_mol_ref.GetAtoms():
-        if atom.GetSymbol() == "*":
-            orig_dummy_loc = atom.GetIdx()
-
-            for neighbour_atom in atom.GetNeighbors():
-                ap_frag_idx = neighbour_atom.GetIdx()
-
-            break
-
-    fragment_mol = Chem.RemoveHs(fragment_mol_ref)
-
-    if not has_one_dummy(fragment_mol):
-        msg = "Covalent SMARTS must have exactly one dummy atom"
-        raise ValueError(msg)
-
-    enumerator = rdMolStandardize.TautomerEnumerator()
-    fragment_mol_cmp = enumerator.Canonicalize(fragment_mol)
-
-    uncharger = rdMolStandardize.Uncharger()
-    fragment_mol_cmp = uncharger.uncharge(fragment_mol_cmp)
-
-    for mol in mols:
-        for iso in mol.molecules:
-            iso_mol = iso._molecule
-            Chem.SanitizeMol(iso_mol)
-
-            # clean-up to deal with protonation, charge and tautomer states
-            iso_mol_noH = Chem.RemoveHs(iso_mol)
-            iso_mol_cmp = enumerator.Canonicalize(iso_mol_noH)
-            iso_mol_cmp = uncharger.uncharge(iso_mol_cmp)
-
-            match_idx = iso_mol_cmp.GetSubstructMatches(fragment_mol_cmp, useChirality=False)
-
-            # gypsum may generate non-matching variants e.g. tautomers
-            if not match_idx:
-                continue
-
-            if len(match_idx) > 1:
-                continue
-
-            heavy_idx = list(match_idx[0])
-            dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol)
-
-            if dummy_loc is None:
-                continue
-
-            ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
-            ap_atom.SetIsotope(MAP_NUM)
-            heavy_idx.remove(dummy_loc)
-
-            hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
-            new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
-
-            if not new_mol:
-                continue
-
-            iso._molecule = reorder_atoms(new_mol, MAP_NUM)
-
-    return ap_frag_idx, orig_dummy_loc
 
 
 def prepare_mols_for_local(mols: list[IsomerCollection], ref_mol: Chem.Mol):
