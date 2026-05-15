@@ -12,9 +12,8 @@ from maize.utilities.testing import TestRig
 from maize.utilities.validation import SuccessValidator
 from maize.utilities.resources import cpu_count
 from maize.utilities.execution import ProcessError
-from maize.utilities.chem import IsomerCollection, save_smiles
+from maize.utilities.chem import IsomerCollection, save_smiles, save_sdf_library
 from maize.utilities.io import Config
-
 
 DEFAULT_FILE_NAME = "untitled_line_{0}__input{0}.sdf"
 FAILED_SMILES_FILE = "gypsum_dl_failed.smi"
@@ -47,6 +46,7 @@ class Gypsum(Node):
         Gypsum, using RDKit embedding functionality.
 
     """
+
     tags = {"chemistry", "sampler", "embedding"}
 
     required_callables = ["gypsum"]
@@ -152,10 +152,13 @@ class Gypsum(Node):
                     isomer.name = isomer.inchi
 
                     if not isomer.name:
-                        self.logger.debug(f"@@@ InChiKey generation failed for {smi} read from {file}")
+                        self.logger.debug(
+                            f"@@@ InChiKey generation failed for {smi} read from {file}"
+                        )
 
             mols.append(mol)
 
+        save_sdf_library(Path("_test.sdf"), mols, split_strategy="none")
         self.out.send(mols)
 
 

@@ -23,7 +23,8 @@ from .chem import (
     IsomerCollection,
     Conformer,
     ChemistryException,
-    refresh_conformer_wrappers
+    refresh_conformer_wrappers,
+    find_mol
 )
 
 __all__ = [
@@ -42,5 +43,6 @@ __all__ = [
     "Isomer",
     "IsomerCollection",
     "Conformer",
-    "refresh_conformer_wrappers"
+    "refresh_conformer_wrappers",
+    "find_mol"
 ]

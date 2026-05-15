@@ -293,11 +293,15 @@ def save_sdf_library(
                         for k, conf in enumerate(iso.conformers):
                             # RDKit does not write conformer properties by default
                             rdmol = Chem.Mol(iso._molecule, confId=k)
+
                             for name, value in conf.tags.items():
                                 rdmol.SetProp(name, str(value))
-                            writer.write(rdmol, confId=k)
+
+                            if rdmol:
+                                writer.write(rdmol, confId=k)
                     else:
-                        writer.write(iso._molecule)
+                        if iso._molecule:
+                            writer.write(iso._molecule)
 
 
 def load_sdf_or_mae_library(

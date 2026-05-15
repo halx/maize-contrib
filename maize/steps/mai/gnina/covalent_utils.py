@@ -1,10 +1,13 @@
 """Support routines for covalent docking with Gnina"""
 
+import logging
+
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 from maize.utilities.chem import IsomerCollection
 
+logger = logging.getLogger("run")
 MAP_NUM = 99
 
 
@@ -145,8 +148,6 @@ def combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
         pass
 
     iso._molecule = rw_mol.GetMol()
-
-
 
 
 def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):

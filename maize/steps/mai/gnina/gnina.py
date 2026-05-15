@@ -16,8 +16,15 @@ from maize.steps.mai.gnina.covalent_utils import (
     prepare_mols_for_covalent,
     prepare_mols_for_local,
 )
-from maize.utilities.chem import Isomer, IsomerCollection, Conformer
-from maize.utilities.chem.chem import find_mol, load_sdf_library, merge_libraries, save_sdf_library
+from maize.utilities.chem import (
+    Isomer,
+    IsomerCollection,
+    Conformer,
+    find_mol,
+    load_sdf_library,
+    merge_libraries,
+    save_sdf_library,
+)
 from maize.utilities.validation import FileValidator
 from maize.utilities.resources import cpu_count
 from maize.utilities.execution import GPU
@@ -369,6 +376,7 @@ class GNINA(_GNINA):
         )
 
         mols = self.inp.receive()
+        self.logger.debug(f"-=- Molecules in: {len(mols)=}")
         smilies = {mol.name: mol.smiles for mol in mols}
 
         ref: Isomer | str | None
@@ -384,6 +392,11 @@ class GNINA(_GNINA):
 
             fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
             ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+
+            for mol in mols:
+                for iso in mol.molecules:
+                    if iso._molecule is None:
+                        self.logger.debug(f"=== mol for {mol.smiles} is None")
 
             if not self.covalent_ap_fragment.is_set:
                 msg = "Covalent docking requires fragment attachment point"
@@ -464,6 +477,7 @@ class GNINA(_GNINA):
         # NOTE: "schrodinger" splitting would change molecule name to "mol:iso"
         #       None leaves it unmodified
         save_sdf_library(inputs, mols, split_strategy=None, kekulize=kekulize)
+        self.logger.debug(f"-=- {len(mols)} molecules saved")
 
         self.logger.debug(f"{command=}")
         self.run_command(
@@ -477,9 +491,13 @@ class GNINA(_GNINA):
         # Edge case: REINVENT may generate the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
         mols = load_sdf_library(output, split_strategy="inchi", sanitize=False, renumber=False)
+        self.logger.debug(f"-=- {len(mols)} molecules loaded")
 
+        icnt = 0
         for mol in mols:
             for iso in mol.molecules:
+                icnt += 1
+
                 if is_covalent:
                     combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
 
@@ -496,6 +514,8 @@ class GNINA(_GNINA):
                     mol.smiles = smiles
                     break
 
+        self.logger.debug(f"-=- #isomers = {icnt}")
+        self.logger.debug(f"-=- Molecules out: {len(mols)=}")
         self.out.send(mols)
 
     def _tag_iso(self, iso: Isomer):
