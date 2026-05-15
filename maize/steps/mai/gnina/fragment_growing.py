@@ -31,10 +31,6 @@ MAP_NUM = 99
 def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):
     ap_frag_idx, orig_dummy_loc = find_dummy(fragment_mol_ref)
 
-    if ap_frag_idx == -1:
-        msg = "Covalent reference must have exactly one dummy atom"
-        raise ValueError(msg)
-
     fragment_mol_cmp = Chem.RemoveHs(fragment_mol_ref)
 
     enumerator = TautomerEnumerator()
@@ -81,23 +77,26 @@ def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
     neighbour atom.
 
     :param mol: molecule with dummy
-    :returns: indices of dummy and neighbour or -1 if more than one dummy or neighbour
+    :returns: indices of dummy and neighbour
+    :raise: ValueError if not exactly one dummy and one neighbour
     """
 
     n_dummies = 0
-    n_indices = 0
+    n_neighbours = 0
     orig_dummy_loc = ap_frag_idx = -1
 
     for atom in mol.GetAtoms():
-        if atom.GetSymbol() == "*":
+        if atom.GetAtomicNum() == 0:
+            n_dummies += 1
             orig_dummy_loc = atom.GetIdx()
 
             for neighbour_atom in atom.GetNeighbors():
-                n_indices += 1
+                n_neighbours += 1
                 ap_frag_idx = neighbour_atom.GetIdx()
 
-    if n_dummies != 1 or n_indices != 1:
-        return -1, -1
+    if n_dummies != 1 or n_neighbours != 1:
+        raise ValueError(f"Must have exactly one dummy (found {n_dummies}) "
+                         f"and one neighbour atom (found {n_neighbours})")
 
     return ap_frag_idx, orig_dummy_loc
 

@@ -119,6 +119,7 @@ class Gypsum(Node):
                 self.logger.info("Failed SMILES:\n'%s'", "\n".join(failed))
 
         mols = []
+        icnt = 0
         for i, smi in enumerate(smiles):
             gypsum_index = i + 1
             file = Path(DEFAULT_FILE_NAME.format(gypsum_index))
@@ -135,6 +136,7 @@ class Gypsum(Node):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
 
                 for isomer in mol.molecules:
+                    icnt += 1
                     isomer.name = isomer.inchi
 
             # We already check for failed embeddings so this shouldn't really happen
@@ -150,6 +152,7 @@ class Gypsum(Node):
 
                 for isomer in mol.molecules:
                     isomer.name = isomer.inchi
+                    icnt += 1
 
                     if not isomer.name:
                         self.logger.debug(
@@ -158,7 +161,7 @@ class Gypsum(Node):
 
             mols.append(mol)
 
-        save_sdf_library(Path("_test.sdf"), mols, split_strategy="none")
+        self.logger.debug(f"-=- #isomers {icnt}")
         self.out.send(mols)
 
 
