@@ -355,11 +355,11 @@ def load_sdf_or_mae_library(
         backend = Chem.MaeMolSupplier
         file_handle = gzip.open(file.as_posix())
 
-    with backend(file_handle, removeHs=False) as supp:
+    with backend(file_handle, sanitize=sanitize, removeHs=False) as supp:
         for i, mol in enumerate(supp):
             if mol is None:
                 continue
-            iso = Isomer(mol)
+            iso = Isomer(mol)  # FIXME: this will skip invalid molecules!
 
             mol_idx: int | str
             # Split based on special name: molecule:isomer
