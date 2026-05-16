@@ -107,12 +107,12 @@ def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int
     :returns: matching indices of heavy atoms with dummy equivalent removed
     """
 
-    # params = Chem.AdjustQueryParameters()
-    # params.makeDummiesQueries = True
-    # params.makeBondsGeneric = True
-    # query = Chem.AdjustQueryProperties(query, params)
+    params = Chem.AdjustQueryParameters()
+    params.adjustDegree = False  # same as if frag constructed as SMARTS
+    params.makeDummiesQueries = True  # the default
+    params.makeBondsGeneric = True  # tautomers
+    query = Chem.AdjustQueryProperties(frag, params)
 
-    query = Chem.MolFromSmarts(Chem.MolToSmiles(frag))
     match_idx = mol.GetSubstructMatches(query, useChirality=False)
 
     if not match_idx or len(match_idx) != 1:
@@ -121,20 +121,16 @@ def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int
     heavy_idx = list(match_idx[0])
     heavy_idx.pop(dummy_loc)
 
-    # for debugging
-    ap_atom = mol.GetAtomWithIdx(dummy_loc)
-    ap_atom.SetIsotope(MAP_NUM)
-
     return heavy_idx
 
 
 def find_hydrogens(mol: Chem.Mol, heavy_idx: list[int]) -> list:
-    """Find the hydrogen from the fragment in the molecule
+    """Find the hydrogens from the fragment in the molecule
 
     The fragment is expected to contain heavy atoms only
 
     :param mol: molecule
-    :param heavy_idx: indexes of heavy atoms correspoding to fragment
+    :param heavy_idx: indexes of heavy atoms corresponding to fragment
     :returns: hydrogens attached to the match
     """
 
@@ -144,7 +140,7 @@ def find_hydrogens(mol: Chem.Mol, heavy_idx: list[int]) -> list:
         atom = mol.GetAtomWithIdx(idx)
 
         for neighbor_atom in atom.GetNeighbors():
-            if neighbor_atom.GetAtomicNum() == 1:  # skip H attached to dummy
+            if neighbor_atom.GetAtomicNum() == 1:
                 hydrogen_idx.append(neighbor_atom.GetIdx())
 
     return hydrogen_idx
