@@ -393,13 +393,6 @@ class GNINA(_GNINA):
                 self.logger.critical(msg)
                 raise ValueError(msg)
 
-            ref = Path(self.inp_ref.receive_optional())
-
-            if not ref.is_file() and not os.access(ref, os.R_OK):
-                msg = "Reference pose file not accessible"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
             if ref is None:
                 msg = "SDF references is a required parameter"
                 self.logger.critical(msg)
@@ -425,6 +418,7 @@ class GNINA(_GNINA):
 
             # receptor with fragment and its AP
             ref_file = Path("ref.sdf")
+            ref = self.inp_ref.receive_optional()
             ref.to_sdf(ref_file)
             covalent_ap = self.covalent_ap_fragment.value
 
