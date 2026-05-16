@@ -43,33 +43,14 @@ def prepare_mols_for_covalent(
     """
 
     ap_frag_idx, orig_dummy_loc = find_dummy(fragment_mol_ref)
-
-    fragment_mol_cmp = Chem.RemoveHs(fragment_mol_ref)
-
-    enumerator = TautomerEnumerator()
-    fragment_mol_cmp = enumerator.Canonicalize(fragment_mol_cmp)
-
-    uncharger = Uncharger()
-    fragment_mol_cmp = uncharger.uncharge(fragment_mol_cmp)
+    fragment_mol_noH = Chem.RemoveHs(fragment_mol_ref)
+    _, heavy_dummy_loc = find_dummy(fragment_mol_noH)
 
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
-            match_idx = get_substructure(iso_mol, fragment_mol_cmp, enumerator, uncharger)
 
-            if not match_idx or len(match_idx) > 1:
-                continue
-
-            heavy_idx = list(match_idx[0])
-            dummy_loc = find_attachment_point_index(fragment_mol_ref, heavy_idx)
-
-            if dummy_loc is None:
-                continue
-
-            ap_atom = iso_mol.GetAtomWithIdx(dummy_loc)
-            ap_atom.SetIsotope(MAP_NUM)
-            heavy_idx.remove(dummy_loc)
-
+            heavy_idx = get_heavy_substructure_indices(iso_mol, fragment_mol_noH, heavy_dummy_loc)
             hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
             new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
@@ -114,52 +95,37 @@ def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
     return ap_frag_idx, orig_dummy_loc
 
 
-def get_substructure(
-    mol1: Chem.Mol, mol2: Chem.Mol, tautomer_enumerator: TautomerEnumerator, uncharger: Uncharger
-) -> list[list[int]]:
-    """Substructure search on canonical tautomer and charge neutral molecules
+def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int) -> list[int]:
+    """Heavy atom substructure match
 
-    This allows better comparing a fragment with a molecule that has undergone
-    ligand preparation.
+    Removes the atom in the molecule that is the equivalent of the dummy atom
+    in the fragment.
 
-    :param mol1: molecule to search for substructure
-    :param mol2: expected substructure
-    :param tautomer_enumerator: tautomer enumerator
-    :param uncharger; uncharger
-    :returns: the matches indices
+    :param mol: molecule to search for substructure
+    :param frag: expected substructure
+    :param dummy_loc: dummy atom index
+    :returns: matching indices of heavy atoms with dummy equivalent removed
     """
 
-    mol1 = tautomer_enumerator.Canonicalize(mol1)
-    mol1 = uncharger.uncharge(mol1)
+    # params = Chem.AdjustQueryParameters()
+    # params.makeDummiesQueries = True
+    # params.makeBondsGeneric = True
+    # query = Chem.AdjustQueryProperties(query, params)
 
-    match_idx = mol1.GetSubstructMatches(mol2, useChirality=False)
+    query = Chem.MolFromSmarts(Chem.MolToSmiles(frag))
+    match_idx = mol.GetSubstructMatches(query, useChirality=False)
 
-    return match_idx
+    if not match_idx or len(match_idx) != 1:
+        raise ValueError("Molecule does not match fragment or matches more than once")
 
+    heavy_idx = list(match_idx[0])
+    heavy_idx.pop(dummy_loc)
 
-def find_attachment_point_index(frag_mol: Chem.Mol, match_idx: list[int]) -> int | None:
-    """Find index of the dummy atom which will be the attachment point
+    # for debugging
+    ap_atom = mol.GetAtomWithIdx(dummy_loc)
+    ap_atom.SetIsotope(MAP_NUM)
 
-    The indexes are the locations in the matching list of the dummy atom.
-    The matching list contains the indexes of the heavy atoms of the molecule.
-
-    :param frag_mol: the matching fragment molecule
-    :param match_idx: the substructure indexes in the molecule that match the fragment
-    :returns: location of dummy atom or None if not found
-    """
-
-    ap_indexes = []
-
-    for idx in range(len(match_idx)):
-        frag_atom = frag_mol.GetAtomWithIdx(idx)
-
-        if frag_atom.GetAtomicNum() == 0:
-            ap_indexes.append(match_idx[idx])
-
-    if len(ap_indexes) != 1:  # only one AP
-        return None
-
-    return ap_indexes[0]
+    return heavy_idx
 
 
 def find_hydrogens(mol: Chem.Mol, heavy_idx: list[int]) -> list:
