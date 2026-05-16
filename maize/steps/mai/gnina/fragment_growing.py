@@ -28,7 +28,20 @@ logger = logging.getLogger("run")
 MAP_NUM = 99
 
 
-def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol):
+def prepare_mols_for_covalent(
+    mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol
+) -> tuple(int, int):
+    """Prepare molecules for covalent docking
+
+    Deletes reference fragment from molecule to obtain docking fragment and
+    determines AP.
+
+    :param mols: molecules to prepare
+    :param fragment_mol_ref: reference fragment molecule
+    :returns: index of atom which will be the AP in the docking fragment and
+              dummy index in the reference fragment
+    """
+
     ap_frag_idx, orig_dummy_loc = find_dummy(fragment_mol_ref)
 
     fragment_mol_cmp = Chem.RemoveHs(fragment_mol_ref)
@@ -42,15 +55,13 @@ def prepare_mols_for_covalent(mols: list[IsomerCollection], fragment_mol_ref: Ch
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
-            Chem.SanitizeMol(iso_mol)
-
             match_idx = get_substructure(iso_mol, fragment_mol_cmp, enumerator, uncharger)
 
             if not match_idx or len(match_idx) > 1:
                 continue
 
             heavy_idx = list(match_idx[0])
-            dummy_loc = find_attachment_point_index(heavy_idx, fragment_mol_ref)
+            dummy_loc = find_attachment_point_index(fragment_mol_ref, heavy_idx)
 
             if dummy_loc is None:
                 continue
@@ -77,7 +88,7 @@ def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
     neighbour atom.
 
     :param mol: molecule with dummy
-    :returns: indices of dummy and neighbour
+    :returns: indices of dummy atom and neighbour atom
     :raise: ValueError if not exactly one dummy and one neighbour
     """
 
@@ -95,8 +106,10 @@ def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
                 ap_frag_idx = neighbour_atom.GetIdx()
 
     if n_dummies != 1 or n_neighbours != 1:
-        raise ValueError(f"Must have exactly one dummy (found {n_dummies}) "
-                         f"and one neighbour atom (found {n_neighbours})")
+        raise ValueError(
+            f"Must have exactly one dummy (found {n_dummies}) "
+            f"and one neighbour atom (found {n_neighbours})"
+        )
 
     return ap_frag_idx, orig_dummy_loc
 
@@ -125,15 +138,15 @@ def get_substructure(
     return match_idx
 
 
-def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> int | None:
+def find_attachment_point_index(frag_mol: Chem.Mol, match_idx: list[int]) -> int | None:
     """Find index of the dummy atom which will be the attachment point
 
     The indexes are the locations in the matching list of the dummy atom.
     The matching list contains the indexes of the heavy atoms of the molecule.
 
-    :param match_idx: the subsstructure indexes in the molecule that match the fragment
     :param frag_mol: the matching fragment molecule
-    :returns: location of dummy atom
+    :param match_idx: the substructure indexes in the molecule that match the fragment
+    :returns: location of dummy atom or None if not found
     """
 
     ap_indexes = []
@@ -141,7 +154,7 @@ def find_attachment_point_index(match_idx: list[int], frag_mol: Chem.Mol) -> int
     for idx in range(len(match_idx)):
         frag_atom = frag_mol.GetAtomWithIdx(idx)
 
-        if frag_atom.GetSymbol() == "*":
+        if frag_atom.GetAtomicNum() == 0:
             ap_indexes.append(match_idx[idx])
 
     if len(ap_indexes) != 1:  # only one AP
@@ -228,25 +241,38 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
     return reordered_mol
 
 
-def combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int):
-    if iso.name.startswith("_"):  # why does Gnina do that?
-        iso.name = iso.name[1:]
+def combine_iso_with_fragment(
+    mol: Chem.Mol, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int
+) -> Chem.Mol:
+    """Combine the docking fragment with the reference fragment
 
-    combined = Chem.CombineMols(iso._molecule, fragment_mol_ref)
+    Assumes AP in docking fragment is at index 0.
+
+    :param mol: docking fragment
+    :param fragment_mol_ref: reference fragment (needs hydrogens!)
+    :param ap_frag_idx: index of the AP in the docking fragment
+    :param orig_dummy_loc: index of the dummy atom in the reference fragment, to be deleted
+    :returns: combined molecule
+    """
+
+    if mol.name.startswith("_"):  # why does Gnina do that?
+        mol.name = mol.name[1:]
+
+    combined = Chem.CombineMols(mol, fragment_mol_ref)
     rw_mol = Chem.RWMol(combined)
-    offset = iso._molecule.GetNumAtoms()
+    offset = mol._molecule.GetNumAtoms()
 
-    # FIXME: assumes AP is first atom
     if offset > 0:
         rw_mol.AddBond(0, ap_frag_idx + offset, Chem.BondType.SINGLE)
         rw_mol.RemoveAtom(orig_dummy_loc + offset)
 
     try:
         Chem.SanitizeMol(rw_mol)
-    except (Chem.KekulizeException, Chem.AtomValenceException) as error:
+    except (Chem.KekulizeException, Chem.AtomValenceException):
+        # FIXME: check why this happens
         pass
 
-    iso._molecule = rw_mol.GetMol()
+    return rw_mol.GetMol()
 
 
 def prepare_mols_for_local(mols: list[IsomerCollection], ref_mol: Chem.Mol):

@@ -139,7 +139,7 @@ class _GNINA(Node, register=False):
     """Name of a pre-trained CNN model or ensemble models to use"""
 
     covalent_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
-    """SDF of the fragment to remove from the molecule"""
+    """SDF of the fragment (must have hydrogens)) in the receptor"""
 
     # NOTE: this could also be x,y,z coordinates, not optional if covalent_ref is set
     covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
@@ -512,7 +512,7 @@ class GNINA(_GNINA):
                 icnt += 1
 
                 if is_covalent:
-                    combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
+                    iso._molecule = combine_iso_with_fragment(iso._molecule, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
 
                 self._tag_iso(iso)
                 self.logger.info(
