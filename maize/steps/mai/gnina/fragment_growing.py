@@ -223,7 +223,7 @@ def combine_iso_with_fragment(
     if mol.name.startswith("_"):  # why does Gnina do that?
         mol.name = mol.name[1:]
 
-    combined = Chem.CombineMols(mol, fragment_mol_ref)
+    combined = Chem.CombineMols(mol._molecule, fragment_mol_ref)
     rw_mol = Chem.RWMol(combined)
     offset = mol._molecule.GetNumAtoms()
 
