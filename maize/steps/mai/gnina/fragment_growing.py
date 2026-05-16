@@ -50,7 +50,7 @@ def prepare_mols_for_covalent(
         for iso in mol.molecules:
             iso_mol = iso._molecule
 
-            heavy_idx = get_heavy_substructure_indices(iso_mol, fragment_mol_noH, heavy_dummy_loc)
+            heavy_idx = get_heavy_substructure_indices(iso_mol, fragment_mol_noH, heavy_dummy_loc, MAP_NUM)
             hydrogen_idx = find_hydrogens(iso_mol, heavy_idx)
             new_mol = delete_fragmemt_from_mol(iso_mol, heavy_idx + hydrogen_idx)
 
@@ -95,7 +95,7 @@ def find_dummy(mol: Chem.Mol) -> tuple[int, int]:
     return ap_frag_idx, orig_dummy_loc
 
 
-def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int) -> list[int]:
+def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int, map_num: int) -> list[int]:
     """Heavy atom substructure match
 
     Removes the atom in the molecule that is the equivalent of the dummy atom
@@ -104,6 +104,7 @@ def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int
     :param mol: molecule to search for substructure
     :param frag: expected substructure
     :param dummy_loc: dummy atom index
+    :param map_num: isotope label number
     :returns: matching indices of heavy atoms with dummy equivalent removed
     """
 
@@ -119,6 +120,10 @@ def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int
         raise ValueError("Molecule does not match fragment or matches more than once")
 
     heavy_idx = list(match_idx[0])
+
+    ap_atom = mol.GetAtomWithIdx(heavy_idx[dummy_loc])
+    ap_atom.SetIsotope(map_num)
+
     heavy_idx.pop(dummy_loc)
 
     return heavy_idx
