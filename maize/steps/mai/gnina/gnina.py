@@ -382,6 +382,7 @@ class GNINA(_GNINA):
         ref: Isomer | str | None
         kekulize = True
         is_covalent = False
+        conformers = False
 
         if self.covalent_kekulize.is_set:
             kekulize = self.covalent_kekulize.value
@@ -414,6 +415,7 @@ class GNINA(_GNINA):
 
             kekulize = False
             is_covalent = True
+            conformers = True
 
             # delete fragment and determine AP
             ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
@@ -485,7 +487,7 @@ class GNINA(_GNINA):
 
         # NOTE: "schrodinger" splitting would change molecule name to "mol:iso"
         #       None leaves it unmodified
-        save_sdf_library(inputs, mols, split_strategy=None, kekulize=kekulize)
+        save_sdf_library(inputs, mols, split_strategy=None, conformers=conformers, kekulize=kekulize)
         self.logger.debug(f"-=- {len(mols)} molecules saved")
 
         self.logger.debug(f"{command=}")
