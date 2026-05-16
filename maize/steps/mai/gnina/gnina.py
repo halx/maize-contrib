@@ -507,7 +507,7 @@ class GNINA(_GNINA):
                 icnt += 1
 
                 if is_covalent:
-                    iso._molecule = combine_iso_with_fragment(iso._molecule, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
+                    iso._molecule = combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
 
                 self._tag_iso(iso)
                 self.logger.info(

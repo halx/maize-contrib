@@ -20,9 +20,8 @@ receptor contains a copy of the fragment in the binding site).
 import logging
 
 from rdkit import Chem
-from rdkit.Chem.MolStandardize.rdMolStandardize import TautomerEnumerator, Uncharger
 
-from maize.utilities.chem import IsomerCollection
+from maize.utilities.chem import IsomerCollection, Isomer
 
 logger = logging.getLogger("run")
 MAP_NUM = 99
@@ -208,7 +207,7 @@ def reorder_atoms(mol: Chem.Mol, map_num: int) -> Chem.Mol | None:
 
 
 def combine_iso_with_fragment(
-    mol: Chem.Mol, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int
+    mol: Isomer, fragment_mol_ref, ap_frag_idx, orig_dummy_loc: int
 ) -> Chem.Mol:
     """Combine the docking fragment with the reference fragment
 
