@@ -1,5 +1,5 @@
 """Docking with GNINA"""
-
+import os
 from functools import partial, reduce
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -387,32 +387,45 @@ class GNINA(_GNINA):
             kekulize = self.covalent_kekulize.value
 
         if self.covalent_ref.is_set:
-            kekulize = False
-            is_covalent = True
+            # sanity checks
+            if not self.covalent_ap_fragment.is_set:
+                msg = "Covalent docking requires fragment attachment point"
+                self.logger.critical(msg)
+                raise ValueError(msg)
 
-            fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
-            ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+            ref = Path(self.inp_ref.receive_optional())
+
+            if not ref.is_file() and not os.access(ref, os.R_OK):
+                msg = "Reference pose file not accessible"
+                self.logger.critical(msg)
+                raise ValueError(msg)
+
+            if ref is None:
+                msg = "SDF references is a required parameter"
+                self.logger.critical(msg)
+                raise ValueError(msg)
+
+            try:
+                fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
+            except OSError:
+                msg = "SDF reference cannot be read"
+                self.logger.critical(msg)
+                raise ValueError(msg)
 
             for mol in mols:
                 for iso in mol.molecules:
                     if iso._molecule is None:
                         self.logger.debug(f"=== mol for {mol.smiles} is None")
 
-            if not self.covalent_ap_fragment.is_set:
-                msg = "Covalent docking requires fragment attachment point"
-                self.logger.critical(msg)
-                raise ValueError(msg)
+            kekulize = False
+            is_covalent = True
 
-            ref = self.inp_ref.receive_optional()
+            # delete fragment and determine AP
+            ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
 
-            if ref is None:
-                msg = "SDF references is required"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
+            # receptor with fragment and its AP
             ref_file = Path("ref.sdf")
             ref.to_sdf(ref_file)
-
             covalent_ap = self.covalent_ap_fragment.value
 
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
