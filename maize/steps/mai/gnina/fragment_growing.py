@@ -30,7 +30,7 @@ MAP_NUM = 99
 
 def prepare_mols_for_covalent(
     mols: list[IsomerCollection], fragment_mol_ref: Chem.Mol
-) -> tuple(int, int):
+) -> tuple[int, int]:
     """Prepare molecules for covalent docking
 
     Deletes reference fragment from molecule to obtain docking fragment and
