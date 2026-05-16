@@ -376,7 +376,7 @@ class GNINA(_GNINA):
         )
 
         mols = self.inp.receive()
-        self.logger.debug(f"-=- Molecules in: {len(mols)=}")
+        self.logger.debug(f"-=- Molecules in: {len(mols)}")
         smilies = {mol.name: mol.smiles for mol in mols}
 
         ref: Isomer | str | None
@@ -417,6 +417,7 @@ class GNINA(_GNINA):
 
             # delete fragment and determine AP
             ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+            self.logger.debug(f"-=- Molecules after covalent preparation: {len(mols)}")
 
             # receptor with fragment and its AP
             ref_file = Path("ref.sdf")
@@ -523,7 +524,7 @@ class GNINA(_GNINA):
                     break
 
         self.logger.debug(f"-=- #isomers = {icnt}")
-        self.logger.debug(f"-=- Molecules out: {len(mols)=}")
+        self.logger.debug(f"-=- Molecules out: {len(mols)}")
         self.out.send(mols)
 
     def _tag_iso(self, iso: Isomer):

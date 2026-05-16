@@ -162,6 +162,7 @@ class Gypsum(Node):
             mols.append(mol)
 
         self.logger.debug(f"-=- #isomers {icnt}")
+        self.logger.debug(f"-=- Molecules out: {len(mols)}")
         self.out.send(mols)
 
 
