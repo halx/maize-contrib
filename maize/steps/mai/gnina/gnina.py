@@ -393,7 +393,7 @@ class GNINA(_GNINA):
                 self.logger.critical(msg)
                 raise ValueError(msg)
 
-            if ref is None:
+            if ref := self.inp_ref.receive_optional() is None:
                 msg = "SDF references is a required parameter"
                 self.logger.critical(msg)
                 raise ValueError(msg)
@@ -418,7 +418,6 @@ class GNINA(_GNINA):
 
             # receptor with fragment and its AP
             ref_file = Path("ref.sdf")
-            ref = self.inp_ref.receive_optional()
             ref.to_sdf(ref_file)
             covalent_ap = self.covalent_ap_fragment.value
 
