@@ -393,7 +393,9 @@ class GNINA(_GNINA):
                 self.logger.critical(msg)
                 raise ValueError(msg)
 
-            if ref := self.inp_ref.receive_optional() is None:
+            ref = self.inp_ref.receive_optional() 
+
+            if ref is None:
                 msg = "SDF references is a required parameter"
                 self.logger.critical(msg)
                 raise ValueError(msg)
