@@ -129,7 +129,6 @@ def get_substructure(
     :returns: the matches indices
     """
 
-    mol1 = Chem.RemoveHs(mol1)
     mol1 = tautomer_enumerator.Canonicalize(mol1)
     mol1 = uncharger.uncharge(mol1)
 
