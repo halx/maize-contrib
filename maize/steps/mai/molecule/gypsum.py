@@ -68,8 +68,14 @@ class Gypsum(Node):
 
     """
 
-    ph_range: Parameter[tuple[float, float]] = Parameter(default=(6.4, 8.4))
+    # tight pH range and small pKa precision to avoid "funny" variants
+    # like deprotonated amide when upper pH range is too basic and pKa
+    # precision is too loose
+    ph_range: Parameter[tuple[float, float]] = Parameter(default=(7.3, 7.5))
     """The pH range in which to generate variants (min, max)"""
+
+    pka_precision: Parameter[float] = Parameter(default=0.1)
+    """Size (stddev) of pH substructure ranges"""
 
     use_filters: Flag = Flag(default=True)
     """Whether to use additional substructure filters from the Durrant lab"""
@@ -89,6 +95,7 @@ class Gypsum(Node):
             f"--max_variants_per_compound {self.n_variants.value} "
             f"--thoroughness {self.thoroughness.value} --separate_output_files "
             f"--min_ph {self.ph_range.value[0]} --max_ph {self.ph_range.value[1]} "
+            f"--pka_precision {self.pka_precision.value} "
             f"--job_manager multiprocessing --num_processors {self.n_jobs.value} "
         )
         if self.use_filters.value:
@@ -105,6 +112,7 @@ class Gypsum(Node):
         )
 
         failed = set()
+
         if res.returncode == 130:  # Timeout
             self.logger.warning("Timed out during embedding")
             failed = set(smiles)
@@ -119,7 +127,7 @@ class Gypsum(Node):
                 self.logger.info("Failed SMILES:\n'%s'", "\n".join(failed))
 
         mols = []
-        icnt = 0
+
         for i, smi in enumerate(smiles):
             gypsum_index = i + 1
             file = Path(DEFAULT_FILE_NAME.format(gypsum_index))
@@ -130,13 +138,12 @@ class Gypsum(Node):
                     "Skipping failed embedding for SMILES '%s', falling back to RDKit", smi
                 )
                 mol = IsomerCollection.from_smiles(smi)
-                mol.embed()
+                mol.embed()  # FIXNE: may fail
 
                 if any(isomer.n_conformers == 0 for isomer in mol.molecules):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
 
                 for isomer in mol.molecules:
-                    icnt += 1
                     isomer.name = isomer.inchi
 
             # We already check for failed embeddings so this shouldn't really happen
@@ -152,7 +159,6 @@ class Gypsum(Node):
 
                 for isomer in mol.molecules:
                     isomer.name = isomer.inchi
-                    icnt += 1
 
                     if not isomer.name:
                         self.logger.debug(
@@ -161,8 +167,6 @@ class Gypsum(Node):
 
             mols.append(mol)
 
-        self.logger.debug(f"-=- #isomers {icnt}")
-        self.logger.debug(f"-=- Molecules out: {len(mols)}")
         self.out.send(mols)
 
 
