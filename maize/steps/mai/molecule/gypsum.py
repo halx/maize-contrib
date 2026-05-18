@@ -90,6 +90,7 @@ class Gypsum(Node):
         smiles = [smi.strip() for smi in self.inp.receive()]
         smiles_path = Path("input.smi")
         save_smiles(smiles_path, smiles)
+
         command = (
             f"{self.runnable['gypsum']} --source {smiles_path.as_posix()} "
             f"--max_variants_per_compound {self.n_variants.value} "
@@ -98,6 +99,7 @@ class Gypsum(Node):
             f"--pka_precision {self.pka_precision.value} "
             f"--job_manager multiprocessing --num_processors {self.n_jobs.value} "
         )
+
         if self.use_filters.value:
             command += "--use_durrant_lab_filters"
 
@@ -122,6 +124,7 @@ class Gypsum(Node):
         # Gypsum can fail to embed certain SMILES, but helpfully writes out those separately
         if Path(FAILED_SMILES_FILE).exists():
             self.logger.info("Found failed SMILES file")
+
             with Path(FAILED_SMILES_FILE).open() as failed_file:
                 failed = {smi.split()[0] for smi in failed_file.readlines()}
                 self.logger.info("Failed SMILES:\n'%s'", "\n".join(failed))
@@ -157,6 +160,10 @@ class Gypsum(Node):
                 mol = IsomerCollection.from_sdf(file)
                 mol.smiles = smi
 
+                # Use Schrödinger-like number system because InChIKey is not reliable:
+                # Gypsum-DL sometimes generates molecule which are not variants e.g.
+                # imine-carbonyl for an amide.  This seems less of a problem when
+                # Gypsum-DL only creates a small number of variants.
                 for j, isomer in enumerate(mol.molecules):
                     isomer.name = f"{i}:{j}"   # Schrödinger style
 
