@@ -138,13 +138,13 @@ class Gypsum(Node):
                     "Skipping failed embedding for SMILES '%s', falling back to RDKit", smi
                 )
                 mol = IsomerCollection.from_smiles(smi)
-                mol.embed()  # FIXNE: may fail
+                mol.embed()  # FIXNE: may fail!
 
                 if any(isomer.n_conformers == 0 for isomer in mol.molecules):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
 
-                for isomer in mol.molecules:
-                    isomer.name = isomer.inchi
+                for j, isomer in enumerate(mol.molecules):
+                    isomer.name = f"{i}:{j}"   # Schrödinger style
 
             # We already check for failed embeddings so this shouldn't really happen
             elif not file.exists() or file.stat().st_size == 0:
@@ -157,8 +157,8 @@ class Gypsum(Node):
                 mol = IsomerCollection.from_sdf(file)
                 mol.smiles = smi
 
-                for isomer in mol.molecules:
-                    isomer.name = isomer.inchi
+                for j, isomer in enumerate(mol.molecules):
+                    isomer.name = f"{i}:{j}"   # Schrödinger style
 
                     if not isomer.name:
                         self.logger.debug(
