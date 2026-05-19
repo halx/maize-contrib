@@ -170,9 +170,9 @@ class Gypsum(Node):
                         j = inchikeys.index(inchikey)
                     else:
                         inchikeys.append(inchikey)
-                        j = len(inchikeys)
+                        j = len(inchikeys) - 1
 
-                    isomer.name = f"{i}:{j}"   # Schrödinger style
+                    isomer.name = f"{i}:{j}"   # molecule:variant
 
             mols.append(isomer_collection)
 
