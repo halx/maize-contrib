@@ -149,7 +149,9 @@ class Gypsum(Node):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
 
                 isomer_collection.smiles = smi
-                isomer_collection.molecules.name = f"{i}:0"   # only 1 variant
+
+                for j, isomer in enumerate(isomer_collection.molecules):
+                    isomer.name = f"{i}:{j}"  # should be only 1
 
             # We already check for failed embeddings so this shouldn't really happen
             elif not file.exists() or file.stat().st_size == 0:
