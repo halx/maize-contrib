@@ -4,6 +4,8 @@
 
 from pathlib import Path
 
+from rdkit import Chem
+from rdkit.Chem.inchi import MolToInchiKey
 import pytest
 
 from maize.core.node import Node
@@ -140,14 +142,14 @@ class Gypsum(Node):
                 self.logger.warning(
                     "Skipping failed embedding for SMILES '%s', falling back to RDKit", smi
                 )
-                mol = IsomerCollection.from_smiles(smi)
-                mol.embed()  # FIXNE: may fail!
+                isomer_collection = IsomerCollection.from_smiles(smi)
+                isomer_collection.embed()  # FIXNE: may fail!
 
-                if any(isomer.n_conformers == 0 for isomer in mol.molecules):
+                if any(isomer.n_conformers == 0 for isomer in isomer_collection.molecules):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
 
-                for j, isomer in enumerate(mol.molecules):
-                    isomer.name = f"{i}:{j}"   # Schrödinger style
+                isomer_collection.smiles = smi
+                isomer_collection.molecules.name = f"{i}:0"   # only 1 variant
 
             # We already check for failed embeddings so this shouldn't really happen
             elif not file.exists() or file.stat().st_size == 0:
@@ -157,22 +159,27 @@ class Gypsum(Node):
 
             # All good!
             else:
-                mol = IsomerCollection.from_sdf(file)
-                mol.smiles = smi
+                isomer_collection = IsomerCollection.from_sdf(file)
+                isomer_collection.smiles = smi
+                inchikeys = []
 
-                # Use Schrödinger-like number system because InChIKey is not reliable:
-                # Gypsum-DL sometimes generates molecule which are not variants e.g.
-                # imine-carbonyl for an amide.  This seems less of a problem when
-                # Gypsum-DL only creates a small number of variants.
-                for j, isomer in enumerate(mol.molecules):
+                for isomer in isomer_collection.molecules:
+                    inchikey = MolToInchiKey(isomer._molecule, options="/KET")  # mobile H's and keto-enol
+
+                    if inchikey in inchikeys:  # in case the variant resolves to a new InChIKey
+                        j = inchikeys.index(inchikey)
+                    else:
+                        inchikeys.append(inchikey)
+                        j = len(inchikeys)
+
                     isomer.name = f"{i}:{j}"   # Schrödinger style
 
-                    if not isomer.name:
-                        self.logger.debug(
-                            f"@@@ InChiKey generation failed for {smi} read from {file}"
-                        )
+            mols.append(isomer_collection)
 
-            mols.append(mol)
+         with Chem.SDWriter("_test_gypsum.sdf") as writer:
+             for isomer_collection in mols:
+                 for isomer in isomer_collection.molecules:
+                     writer.write(isomer)
 
         self.out.send(mols)
 
