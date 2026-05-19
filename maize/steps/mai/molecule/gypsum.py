@@ -175,6 +175,7 @@ class Gypsum(Node):
                         j = len(inchikeys) - 1
 
                     isomer.name = f"{i}:{j}"   # molecule:variant
+                    isomer._molecule.SetProp("InChIKey", inchikey)
 
             mols.append(isomer_collection)
 

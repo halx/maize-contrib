@@ -500,7 +500,7 @@ class GNINA(_GNINA):
         # FIXME: review splitting strategy
         # Edge case: REINVENT may generate the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
-        mols = load_sdf_library(output, split_strategy="inchi", sanitize=False, renumber=False)
+        mols = load_sdf_library(output, split_strategy="schrodinger", sanitize=False, renumber=False)
         self.logger.debug(f"-=- {len(mols)} molecules loaded")
 
         icnt = 0

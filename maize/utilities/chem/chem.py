@@ -369,7 +369,7 @@ def load_sdf_or_mae_library(
                         f"Parsed molecule {iso} does not have a suitable name,"
                         "expected format molecule-index:isomer-index"
                     )
-                mol_idx, iso_idx = (int(part) for part in parts)
+                mol_idx, iso_idx = (int(part[1:]) if part.startswith("_") else int(part) for part in parts)
                 mols[mol_idx][iso_idx].append(mol)
 
             # Split based on special tag created by Schrodinger

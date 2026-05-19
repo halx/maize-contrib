@@ -7,6 +7,7 @@ from typing import Any, Callable, List, Literal, TypeVar, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from rdkit import Chem
 import pytest
 
 from maize.core.node import Node
@@ -85,6 +86,12 @@ class BestIsomerFilter(Node):
             IsomerCollection([isos[0]]) if isos else IsomerCollection([]) for isos in isomers
         ]
         self.logger.debug(f"-=- Molecules out: {len(new_mols)=}")
+
+        with Chem.SDWriter("_test_bestisomer.sdf") as writer:
+            for isomer_collection in new_mols:
+                for isomer in isomer_collection.molecules:
+                    writer.write(isomer._molecule)
+
         self.out.send(new_mols)
 
 
