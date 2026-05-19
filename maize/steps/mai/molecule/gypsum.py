@@ -150,8 +150,8 @@ class Gypsum(Node):
 
                 isomer_collection.smiles = smi
 
-                for j, isomer in enumerate(isomer_collection.molecules):
-                    isomer.name = f"{i}:{j}"  # should be only 1
+                for isomer in isomer_collection.molecules:
+                    isomer.name = f"{i}:0"  # only 1 variant
 
             # We already check for failed embeddings so this shouldn't really happen
             elif not file.exists() or file.stat().st_size == 0:
