@@ -166,7 +166,7 @@ class Gypsum(Node):
                 inchikeys = []
 
                 for isomer in isomer_collection.molecules:
-                    inchikey = MolToInchiKey(isomer._molecule, options="/KET")  # mobile H's and keto-enol
+                    inchikey = isomer.inchi
 
                     if inchikey in inchikeys:  # in case the variant resolves to a new InChIKey
                         j = inchikeys.index(inchikey)
