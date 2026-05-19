@@ -176,10 +176,10 @@ class Gypsum(Node):
 
             mols.append(isomer_collection)
 
-         with Chem.SDWriter("_test_gypsum.sdf") as writer:
-             for isomer_collection in mols:
-                 for isomer in isomer_collection.molecules:
-                     writer.write(isomer)
+        with Chem.SDWriter("_test_gypsum.sdf") as writer:
+            for isomer_collection in mols:
+                for isomer in isomer_collection.molecules:
+                    writer.write(isomer)
 
         self.out.send(mols)
 

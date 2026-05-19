@@ -419,7 +419,6 @@ class GNINA(_GNINA):
 
             # delete fragment and determine AP
             ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
-            self.logger.debug(f"-=- Molecules after covalent preparation: {len(mols)}")
 
             # receptor with fragment and its AP
             ref_file = Path("ref.sdf")
