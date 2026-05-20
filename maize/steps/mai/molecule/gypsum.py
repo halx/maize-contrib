@@ -92,6 +92,7 @@ class Gypsum(Node):
         smiles = [smi.strip() for smi in self.inp.receive()]
         smiles_path = Path("input.smi")
         save_smiles(smiles_path, smiles)
+        unique = True  # FIXME: make parameter
 
         command = (
             f"{self.runnable['gypsum']} --source {smiles_path.as_posix()} "
@@ -164,27 +165,49 @@ class Gypsum(Node):
                 isomer_collection = IsomerCollection.from_sdf(file)
                 isomer_collection.smiles = smi
                 inchikeys = []
+                j = -1
 
                 for isomer in isomer_collection.molecules:
                     inchikey = isomer.inchi
 
                     if inchikey in inchikeys:  # in case the variant resolves to a new InChIKey
+                        if unique:  # only store one conformer
+                            continue
+
                         j = inchikeys.index(inchikey)
                     else:
                         inchikeys.append(inchikey)
-                        j = len(inchikeys) - 1
+
+                        if unique:
+                            j += 1
+                        else:
+                            j = len(inchikeys)
 
                     isomer.name = f"{i}:{j}"   # molecule:variant
                     isomer._molecule.SetProp("InChIKey", inchikey)
 
             mols.append(isomer_collection)
 
+
+        filtered_mols = []
+
+        for isomer_collection in mols:
+            isomers = []
+
+            for isomer in isomer_collection.molecules:
+                if not isomer.name.startswith("untitled"):
+                    isomers.append(isomer)
+
+
+            filtered_isomer_collection = IsomerCollection(isomers)
+            filtered_mols.append(filtered_isomer_collection)
+
         with Chem.SDWriter("_test_gypsum.sdf") as writer:
-            for isomer_collection in mols:
+            for isomer_collection in filtered_mols:
                 for isomer in isomer_collection.molecules:
                     writer.write(isomer._molecule)
 
-        self.out.send(mols)
+        self.out.send(filtered_mols)
 
 
 class TestSuiteGypsum:
