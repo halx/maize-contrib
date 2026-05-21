@@ -392,9 +392,7 @@ class GNINA(_GNINA):
             kekulize = False
             is_covalent = True
 
-            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(
-                command, mols
-            )
+            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(mols)
 
             command += subcommand
         elif self.local_opt_ref.is_set:
