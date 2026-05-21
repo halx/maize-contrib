@@ -240,7 +240,7 @@ def combine_iso_with_fragment(
 
     if rw_mol.GetNumAtoms() > 0:
         rw_frag_mol = Chem.RWMol(fragment_mol_ref)
-        rw_frag_mol.RemoveAtoms(orig_dummy_loc)
+        rw_frag_mol.RemoveAtom(orig_dummy_loc)
         frag_coord = rw_frag_mol.GetConformer(0).GetPositions()
         rw_mol.RemoveAllConformers()
 
