@@ -78,7 +78,6 @@ class BestIsomerFilter(Node):
                     break
 
         self.logger.debug(f"-=- #isomers = {icnt}")
-        self.logger.debug(f"-=- Sorting {tag=} by {desc=}")
         sorter = functools.partial(self.sorter, tag=tag, desc=desc)
         isomers = [sorted(mol.molecules, key=sorter, reverse=not desc) for mol in mols]
         #self.logger.debug(f"-=- {isomers=}")

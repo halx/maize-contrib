@@ -378,7 +378,7 @@ class GNINA(_GNINA):
 
         mols = self.inp.receive()
         self.logger.debug(f"-=- Molecules in: {len(mols)}")
-        smilies = [mol.smiles for mol in mols]
+        smilies = {mol.name: mol.smiles for mol in mols}
 
         ref: Isomer | str | None
         kekulize = True
@@ -476,6 +476,7 @@ class GNINA(_GNINA):
         self.logger.debug(f"-=- {len(mols)} molecules loaded")
 
         icnt = 0
+        found_smilies = set()
         for mol in mols:
             for iso in mol.molecules:
                 icnt += 1
@@ -490,10 +491,16 @@ class GNINA(_GNINA):
                     "Parsed isomer '%s', score %s", iso.name or iso.inchi, iso.primary_score
                 )
 
-            mol.primary_score_tag = self.PRIMARY_SCORE_TAG
+            for name, smiles in smilies.items():
+                if mol.name == name:
+                    mol.smiles = smiles
+                    found_smilies.add(smiles)
+                    break
 
-            mol_id = int(mol.name.split(":")[0])  # NOTE: assumes Schrodinger-like names
-            mol.smiles = smilies[mol_id]
+        not_found_smilies = set(smilies.values()) - found_smilies
+
+        if not_found_smilies:
+            self.logger.debug(f"-=- SMILES not found: {not_found_smilies}")
 
         self.logger.debug(f"-=- #isomers = {icnt}")
         self.logger.debug(f"-=- Molecules out: {len(mols)}")
