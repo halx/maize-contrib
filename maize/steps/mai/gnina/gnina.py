@@ -378,7 +378,7 @@ class GNINA(_GNINA):
 
         mols = self.inp.receive()
         self.logger.debug(f"-=- Molecules in: {len(mols)}")
-        smilies = [mol.name: mol.smiles for mol in mols]
+        smilies = [mol.smiles for mol in mols]
 
         ref: Isomer | str | None
         kekulize = True
