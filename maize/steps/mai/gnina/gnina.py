@@ -492,7 +492,7 @@ class GNINA(_GNINA):
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
 
-            mol_id = mol.name.split(":")[0]  # NOTE: assumes Schrodinger-like names
+            mol_id = int(mol.name.split(":")[0])  # NOTE: assumes Schrodinger-like names
             mol.smiles = smilies[mol_id]
 
         self.logger.debug(f"-=- #isomers = {icnt}")
