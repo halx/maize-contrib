@@ -20,6 +20,7 @@ receptor contains a copy of the fragment in the binding site).
 import logging
 
 from rdkit import Chem
+import numpy as np
 
 from maize.utilities.chem import IsomerCollection, Isomer
 
@@ -236,6 +237,25 @@ def combine_iso_with_fragment(
     except (Chem.KekulizeException, Chem.AtomValenceException):
         # FIXME: check why this happens
         pass
+
+    if rw_mol.GetNumAtoms() > 0:
+        rw_frag_mol = Chem.RWMol(fragment_mol_ref)
+        rw_frag_mol.RemoveAtoms(orig_dummy_loc)
+        frag_coord = rw_frag_mol.GetConformer(0).GetPositions()
+        rw_mol.RemoveAllConformers()
+
+        for i, conf in enumerate(mol._molecule.GetConformers()):
+            coords = conf.GetPositions()
+            combined_coords = np.vstack([coords, frag_coord])
+
+            new_conf = Chem.Conformer(rw_mol.GetNumAtoms())
+            new_conf.SetId(conf.GetId())
+            new_conf.Set3D(True)
+
+            for i, coord in enumerate(combined_coords):
+                new_conf.SetAtomPosition(i, coord)
+
+            rw_mol.AddConformer(new_conf)
 
     return rw_mol.GetMol()
 
