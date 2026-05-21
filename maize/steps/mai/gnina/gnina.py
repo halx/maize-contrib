@@ -1,4 +1,5 @@
 """Docking with GNINA"""
+
 import os
 from functools import partial, reduce
 from pathlib import Path
@@ -391,7 +392,9 @@ class GNINA(_GNINA):
             kekulize = False
             is_covalent = True
 
-            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(command, mols)
+            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(
+                command, mols
+            )
 
             command += subcommand
         elif self.local_opt_ref.is_set:
@@ -453,7 +456,9 @@ class GNINA(_GNINA):
 
         # NOTE: "schrodinger" splitting would change molecule name to "mol:iso"
         #       None leaves it unmodified
-        save_sdf_library(inputs, mols, split_strategy=None, conformers=conformers, kekulize=kekulize)
+        save_sdf_library(
+            inputs, mols, split_strategy=None, conformers=conformers, kekulize=kekulize
+        )
         self.logger.debug(f"-=- {len(mols)} molecules saved")
 
         self.logger.debug(f"{command=}")
@@ -467,7 +472,9 @@ class GNINA(_GNINA):
         # FIXME: review splitting strategy
         # Edge case: REINVENT may generate the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
-        mols = load_sdf_library(output, split_strategy="schrodinger", sanitize=False, renumber=False)
+        mols = load_sdf_library(
+            output, split_strategy="schrodinger", sanitize=False, renumber=False
+        )
         self.logger.debug(f"-=- {len(mols)} molecules loaded")
 
         icnt = 0
@@ -476,7 +483,9 @@ class GNINA(_GNINA):
                 icnt += 1
 
                 if is_covalent:
-                    iso._molecule = combine_iso_with_fragment(iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc)
+                    iso._molecule = combine_iso_with_fragment(
+                        iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
+                    )
 
                 self._tag_iso(iso)
                 self.logger.info(
@@ -520,8 +529,10 @@ class GNINA(_GNINA):
         ref.to_sdf(ref_file)
         covalent_ap = self.covalent_ap_fragment.value
 
-        command = (f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
-                   f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' ")
+        command = (
+            f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
+            f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
+        )
 
         return command, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
 
