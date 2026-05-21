@@ -2,7 +2,7 @@
 import os
 from functools import partial, reduce
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal, Any, cast
 
 import rdkit.Chem.AllChem as Chem
 import numpy as np
@@ -388,40 +388,12 @@ class GNINA(_GNINA):
             kekulize = self.covalent_kekulize.value
 
         if self.covalent_ref.is_set:
-            # sanity checks
-            if not self.covalent_ap_fragment.is_set:
-                msg = "Covalent docking requires fragment attachment point"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
-            ref = self.inp_ref.receive_optional() 
-
-            if ref is None:
-                msg = "SDF references is a required parameter"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
-            try:
-                fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
-            except OSError:
-                msg = "SDF reference cannot be read"
-                self.logger.critical(msg)
-                raise ValueError(msg)
-
             kekulize = False
             is_covalent = True
-            conformers = True
 
-            # delete fragment and determine AP
-            ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(command, mols)
 
-            # receptor with fragment and its AP
-            ref_file = Path("ref.sdf")
-            ref.to_sdf(ref_file)
-            covalent_ap = self.covalent_ap_fragment.value
-
-            command += f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
-            command += f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' "
+            command += subcommand
         elif self.local_opt_ref.is_set:
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
             prepare_mols_for_local(mols, ref_mol)
@@ -513,15 +485,45 @@ class GNINA(_GNINA):
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
 
-            # recover SMILES as they are the identifier for REINVENT
-            for name, smiles in smilies.items():
-                if mol.name == name:
-                    mol.smiles = smiles
-                    break
+            mol_id = mol.name.split(":")[0]  # NOTE: assumes Schrodinger-like names
+            mol.smiles = smilies[mol_id]
 
         self.logger.debug(f"-=- #isomers = {icnt}")
         self.logger.debug(f"-=- Molecules out: {len(mols)}")
         self.out.send(mols)
+
+    def _covalent_docking(self, mols) -> tuple[str, Chem.Mol, int, int]:
+        if not self.covalent_ap_fragment.is_set:
+            msg = "Covalent docking requires fragment attachment point"
+            self.logger.critical(msg)
+            raise ValueError(msg)
+
+        ref = self.inp_ref.receive_optional()
+
+        if ref is None:
+            msg = "SDF references is a required parameter"
+            self.logger.critical(msg)
+            raise ValueError(msg)
+
+        try:
+            fragment_mol_ref = Chem.MolFromMolFile(self.covalent_ref.value, removeHs=False)
+        except OSError:
+            msg = "SDF reference cannot be read"
+            self.logger.critical(msg)
+            raise ValueError(msg)
+
+        # delete fragment and determine AP
+        ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
+
+        # receptor with fragment and its AP
+        ref_file = Path("ref.sdf")
+        ref.to_sdf(ref_file)
+        covalent_ap = self.covalent_ap_fragment.value
+
+        command = (f"--autobox_ligand {ref_file.resolve().as_posix()} --autobox_add {self.autobox_add.value} "
+                   f"--covalent_rec_atom {covalent_ap} --covalent_lig_atom_pattern '*' ")
+
+        return command, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
 
     def _tag_iso(self, iso: Isomer):
         for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
