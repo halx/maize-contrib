@@ -347,8 +347,8 @@ class GNINA(_GNINA):
     """
     If ``True``, will attempt blind docking to the full protein,
     you should increase ``exhaustiveness`` in this case.
-
     """
+
     tag_nan_score: Parameter[str] = Parameter(optional=True)
 
     def run(self) -> None:
@@ -378,7 +378,7 @@ class GNINA(_GNINA):
 
         mols = self.inp.receive()
         self.logger.debug(f"-=- Molecules in: {len(mols)}")
-        smilies = {mol.name: mol.smiles for mol in mols}
+        smilies = [mol.name: mol.smiles for mol in mols]
 
         ref: Isomer | str | None
         kekulize = True
