@@ -382,7 +382,7 @@ class GNINA(_GNINA):
         ref: Isomer | str | None
         kekulize = True
         is_covalent = False
-        conformers = False
+        conformers = True
 
         if self.covalent_kekulize.is_set:
             kekulize = self.covalent_kekulize.value
@@ -407,11 +407,6 @@ class GNINA(_GNINA):
                 msg = "SDF reference cannot be read"
                 self.logger.critical(msg)
                 raise ValueError(msg)
-
-            for mol in mols:
-                for iso in mol.molecules:
-                    if iso._molecule is None:
-                        self.logger.debug(f"=== mol for {mol.smiles} is None")
 
             kekulize = False
             is_covalent = True
