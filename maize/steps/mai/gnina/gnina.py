@@ -303,7 +303,7 @@ class GNINA(_GNINA):
 
     tags = {"chemistry", "docking", "scorer", "tagger"}
 
-    mode: str = Literal[
+    mode: Parameter[str] = Literal[
         "dock_with_ref",
         "dock_no_ref",
         "local_only",
