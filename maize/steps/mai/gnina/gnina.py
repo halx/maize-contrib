@@ -29,6 +29,16 @@ from maize.utilities.validation import FileValidator
 from maize.utilities.resources import cpu_count
 from maize.utilities.execution import GPU
 
+MODES = Literal[
+    "dock_with_ref",
+    "dock_no_ref",
+    "local_only",
+    "score_only",
+    "minimize_only",
+    "blind",
+    "covalent",  # requires modified Gnina
+    "fragment_local_only",
+]
 ScoreType = Literal["default", "ad4_scoring", "dkoes_fast", "dkoes_scoring", "vina", "vinardo"]
 CNNScoreType = Literal["none", "rescore", "refinement", "metrorescore", "metrorefine", "all"]
 PDBFileType = Annotated[Path, Suffix("pdb", "pdbqt")]
@@ -303,17 +313,7 @@ class GNINA(_GNINA):
 
     tags = {"chemistry", "docking", "scorer", "tagger"}
 
-    mode: Parameter[str] = Literal[
-        "dock_with_ref",
-        "dock_no_ref",
-        "local_only",
-        "score_only",
-        "minimize_only",
-        "blind",
-        "covalent",  # requires modified Gnina
-        "fragment_local_only",
-    ]
-    """Specific docking mode"""
+    mode: Parameter[Literal[MODES]] = Parameter()
 
     inp_ref: Input[Isomer | str] = Input(optional=True)
     """Reference pose input, or name of a compound"""
