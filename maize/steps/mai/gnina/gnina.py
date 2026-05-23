@@ -36,7 +36,7 @@ MODES = Literal[
     "score_only",
     "minimize_only",
     "blind",
-    "covalent",  # requires modified Gnina
+    "fragment_covalent",  # requires modified Gnina
     "fragment_local_only",
 ]
 ScoreType = Literal["default", "ad4_scoring", "dkoes_fast", "dkoes_scoring", "vina", "vinardo"]
@@ -397,11 +397,11 @@ class GNINA(_GNINA):
 
             command += f"--center_x {x} --center_y {y} --center_z {z} "
             command += f"--size_x {dx} --size_y {dy} --size_z {dz} "
-        elif mode == "covalent":
+        elif mode == "fragment_covalent":
             kekulize = False
             is_covalent = True
 
-            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(mols)
+            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._fragment_covalent_docking(mols)
 
             command += subcommand
         elif mode == "fragment_local_only":
@@ -499,7 +499,7 @@ class GNINA(_GNINA):
         self.logger.debug(f"-=- Molecules out: {len(mols)}")
         self.out.send(mols)
 
-    def _covalent_docking(self, mols) -> tuple[str, Chem.Mol, int, int]:
+    def _fragment_covalent_docking(self, mols) -> tuple[str, Chem.Mol, int, int]:
         if not self.covalent_ap_fragment.is_set:
             msg = "Covalent docking requires fragment attachment point"
             self.logger.critical(msg)
