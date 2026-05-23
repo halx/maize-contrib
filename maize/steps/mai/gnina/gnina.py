@@ -1,9 +1,8 @@
 """Docking with GNINA"""
 
-import os
 from functools import partial, reduce
 from pathlib import Path
-from typing import Annotated, Literal, Any, cast
+from typing import Annotated, Literal, cast
 
 import rdkit.Chem.AllChem as Chem
 import numpy as np
@@ -33,6 +32,9 @@ from maize.utilities.execution import GPU
 ScoreType = Literal["default", "ad4_scoring", "dkoes_fast", "dkoes_scoring", "vina", "vinardo"]
 CNNScoreType = Literal["none", "rescore", "refinement", "metrorescore", "metrorefine", "all"]
 PDBFileType = Annotated[Path, Suffix("pdb", "pdbqt")]
+POSE_REF_FILENAME = "ref.sdf"
+INPUT_FILENAME = "mols.sdf"
+OUTPUT_FILENAME = "output.sdf"
 
 
 def refresh_conformer_wrappers(iso) -> None:
@@ -107,50 +109,23 @@ class _GNINA(Node, register=False):
     autobox_add: Parameter[float] = Parameter(default=4.0)
     """Amount of buffer space to add around the ligand"""
 
-    scoring: Parameter[ScoreType] = Parameter(default="default")
-    """Scoring function to use"""
-
-    cnn_scoring: Parameter[CNNScoreType] = Parameter(default="rescore")
-    """CNN scoring method to use"""
-
     exhaustiveness: Parameter[int] = Parameter(default=8)
     """Exhaustiveness of the global search (roughly proportional to time)"""
 
     n_poses: Parameter[int] = Parameter(default=8)
     """Maximum number of poses to generate"""
 
-    score_only: Flag = Flag(default=False)
-    """
-    If ``True``, will only score the provided pose without conformational search.
-    With this option, neither a reference nor search_center need to be provided.
-    """
+    scoring: Parameter[ScoreType] = Parameter(default="default")
+    """Scoring function to use"""
 
-    local_only: Flag = Flag(default=False)
-    """
-    If ``True``, will only do local only optimization and ligand minimization
-    """
-
-    minimize: Flag = Flag(default=False)
-    """Whether to just minimize the passed-in conformation"""
+    cnn_scoring: Parameter[CNNScoreType] = Parameter(default="rescore")
+    """CNN scoring method to use"""
 
     cnn_model: FileParameter[list[Annotated[Path, Suffix("pt")]]] = FileParameter(optional=True)
     """One or more alternative CNN scoring models to use"""
 
     cnn: Parameter[str] = Parameter(optional=True)
     """Name of a pre-trained CNN model or ensemble models to use"""
-
-    covalent_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
-    """SDF of the fragment (must have hydrogens)) in the receptor"""
-
-    # NOTE: this could also be x,y,z coordinates, not optional if covalent_ref is set
-    covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
-    """Attachment point of fragment as chain:resnum:atom_name"""
-
-    covalent_kekulize: Flag = Flag(default=True)
-    """Seems that in covalent docking structure may not kekulize"""
-
-    local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
-    """Reference structure filename for local optimization: ligands will be aligned to it"""
 
     n_jobs: Parameter[int] = Parameter(default=cpu_count())
     """The number of CPUs to use per docking run"""
@@ -215,7 +190,7 @@ class GNINAEnsemble(_GNINA):
             use_reference = False
             search_centers = self.search_center.value
 
-        inputs = Path("mols.sdf")
+        inputs = Path(INPUT_FILENAME)
 
         # Get GPU status
         mps_only = False
@@ -328,14 +303,23 @@ class GNINA(_GNINA):
 
     tags = {"chemistry", "docking", "scorer", "tagger"}
 
+    mode: str = Literal[
+        "dock_with_ref",
+        "dock_no_ref",
+        "local_only",
+        "score_only",
+        "minimize_only",
+        "blind",
+        "covalent",  # requires modified Gnina
+        "fragment_local_only",
+    ]
+    """Specific docking mode"""
+
     inp_ref: Input[Isomer | str] = Input(optional=True)
     """Reference pose input, or name of a compound"""
 
     flex_dist: Parameter[float] = Parameter(default=0.0)
     """Distance around the refeence pose for flexible residues"""
-
-    n_cnn_rot: Parameter[int] = Parameter(default=0)
-    """Number of rotations for each pose"""
 
     receptor: FileParameter[PDBFileType] = FileParameter(optional=True)
     """Path to the receptor structure"""
@@ -343,18 +327,26 @@ class GNINA(_GNINA):
     search_center: Parameter[tuple[float, float, float]] = Parameter(optional=True)
     """Center of the search space for docking"""
 
-    blind: Flag = Flag(default=False)
-    """
-    If ``True``, will attempt blind docking to the full protein,
-    you should increase ``exhaustiveness`` in this case.
-    """
+    n_cnn_rot: Parameter[int] = Parameter(default=0)
+    """Number of rotations for each pose"""
+
+    covalent_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
+    """SDF of the fragment (must have hydrogens and one dummy atom!) in the receptor"""
+
+    # NOTE: this could also be x,y,z coordinates, not optional if covalent_ref is set
+    covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
+    """Attachment point of fragment as chain:resnum:atom_name"""
+
+    local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
+    """Reference structure filename for local optimization: ligands will be aligned to it"""
 
     tag_nan_score: Parameter[str] = Parameter(optional=True)
 
     def run(self) -> None:
+        mode = self.mode.value
         protein = self.receptor.filepath
-        inputs = Path("mols.sdf")
-        output = Path("output.sdf")
+        inputs = Path(INPUT_FILENAME)
+        output = Path(OUTPUT_FILENAME)
 
         command = (
             f"{self.runnable['gnina']} "
@@ -383,57 +375,60 @@ class GNINA(_GNINA):
         ref: Isomer | str | None
         kekulize = True
         is_covalent = False
-        conformers = True
 
-        if self.covalent_kekulize.is_set:
-            kekulize = self.covalent_kekulize.value
+        if mode == "dock_with_ref":
+            ref = self.inp_ref.receive_optional()
+            ref_file = Path(POSE_REF_FILENAME)
 
-        if self.covalent_ref.is_set:
-            kekulize = False
-            is_covalent = True
-
-            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(mols)
-
-            command += subcommand
-        elif self.local_opt_ref.is_set:
-            ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
-            prepare_mols_for_local(mols, ref_mol)
-
-            # only local optimization and minimization of the whole ligand
-            command += "--local_only --minimize "
-        elif (ref := self.inp_ref.receive_optional()) is not None:
-            ref_file = Path("ref.sdf")
             if isinstance(ref, str):
                 ref = find_mol(mols, value=ref)
+
             ref.to_sdf(ref_file)
+
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
             command += f"--autobox_add {self.autobox_add.value} "
 
             if self.flex_dist.value > 0.1:
                 command += f"--flexdist_ligand {ref_file.resolve().as_posix()} "
                 command += f"--flexdist {self.flex_dist.value} "
+        elif mode == "dock_no_ref":
+            x, y, z = self.search_center.value
+            dx, dy, dz = self.search_range.value
 
-        # Treat the whole protein as the search area if we don't know the pocket location
-        elif self.blind.value:
-            command += f"--autobox_ligand {protein.resolve().as_posix()} "
+            command += f"--center_x {x} --center_y {y} --center_z {z} "
+            command += f"--size_x {dx} --size_y {dy} --size_z {dz} "
+        elif mode == "covalent":
+            kekulize = False
+            is_covalent = True
+
+            subcommand, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._covalent_docking(mols)
+
+            command += subcommand
+        elif mode == "fragment_local_only":
+            ref_mol = Chem.MolFromMolFile(self.local_opt_ref.value, removeHs=True)
+            prepare_mols_for_local(mols, ref_mol)
+
+            # only local optimization and minimization of the whole ligand
+            command += "--local_only --minimize "
+
+        elif mode == "local_only":
+            command += "--local_only --minimize "
 
         # In this case we're supplying the complex, so no need for a search box
-        elif self.score_only.value:
+        elif mode == "score_only":
             command += "--score_only "
 
         # Same as above, start from the complex and just minimize without search
-        elif self.minimize.value:
+        elif mode == "minimize_only":
             command += "--minimize "
 
-        elif self.local_only.value:
-            command += "--local_only --minimize "
-
-        # In all other cases we need to tell GNINA where to look for a pocket
+        # Treat the whole protein as the search area if we don't know the pocket location
+        elif mode == "blind":
+            command += f"--autobox_ligand {protein.resolve().as_posix()} "
         else:
-            x, y, z = self.search_center.value
-            dx, dy, dz = self.search_range.value
-            command += f"--center_x {x} --center_y {y} --center_z {z} "
-            command += f"--size_x {dx} --size_y {dy} --size_z {dz} "
+            msg = f"Unknown mode {mode}"
+            self.logger.critical(msg)
+            raise ValueError(msg)
 
         if self.cnn.is_set:  # builtin CNN models
             command += f"--cnn {self.cnn.value} "
@@ -454,9 +449,7 @@ class GNINA(_GNINA):
 
         # NOTE: "schrodinger" splitting would change molecule name to "mol:iso"
         #       None leaves it unmodified
-        save_sdf_library(
-            inputs, mols, split_strategy=None, conformers=conformers, kekulize=kekulize
-        )
+        save_sdf_library(inputs, mols, split_strategy="none", conformers=True, kekulize=kekulize)
         self.logger.debug(f"-=- {len(mols)} molecules saved")
 
         self.logger.debug(f"{command=}")
