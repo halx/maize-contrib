@@ -442,7 +442,7 @@ class SaveSingleLibrary(Node):
                     os.makedirs(base.parent)
 
                 try:
-                    filename = (base.parent / base.name(step=step_num)).resolve()
+                    filename = (base.parent / base.name.format(step=step_num)).resolve()
                 except (KeyError, ValueError) as error:
                     msg = f"Malformed path {self.file}: {error}"
                     self.logger.error(msg)
