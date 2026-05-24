@@ -170,6 +170,10 @@ class Gypsum(Node):
                 for isomer in isomer_collection.molecules:
                     inchikey = isomer.inchi
 
+                    # Find unique variants as Gypsum will create exactly the N
+                    # variants the user has asked for.  This means that conformers
+                    # are variants but for docking we typically are not interested
+                    # in multiple conformers.
                     if inchikey in inchikeys:  # in case the variant resolves to a new InChIKey
                         if unique:  # only store one conformer
                             continue
@@ -183,7 +187,7 @@ class Gypsum(Node):
                         else:
                             j = len(inchikeys)
 
-                    isomer.name = f"{i}:{j}"   # molecule:variant
+                    isomer.name = f"{i}:{j}"   # molecule:variant unlike Schrodinger which is molecule:pose
                     isomer._molecule.SetProp("InChIKey", inchikey)
 
             mols.append(isomer_collection)

@@ -460,9 +460,12 @@ class GNINA(_GNINA):
             prefer_batch=True,
         )
 
-        # FIXME: review splitting strategy
-        # Edge case: REINVENT may generate the same molecule e.g.
+        # FIXME: edge case where REINVENT may generate the same molecule e.g.
         # "CN(C(=O)O)C(=O)c1ccc(F)cc1Br" vs "CN(C(=O)[O-])C(=O)c1ccc(F)cc1Br"
+        #
+        # NOTE: splitting is Schrodinger but we rely here on the notation
+        # from the Gypsum node which is molecule:variant rather than
+        # molecule:pose
         mols = load_sdf_library(
             output, split_strategy="schrodinger", sanitize=False, renumber=False
         )
