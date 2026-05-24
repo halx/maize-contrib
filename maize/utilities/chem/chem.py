@@ -1436,7 +1436,12 @@ class Isomer(_ScorableMixin):
         """Returns the InChI key for the molecule"""
         # We need the fixed-H option here to ensure unique InChIs for different
         # protonation states, see: https://www.inchi-trust.org/technical-faq-2/#15.24
-        return cast(str, result_check(Chem.MolToInchiKey)(self._molecule, options="-FixedH"))
+        try:
+            result = cast(str, result_check(Chem.MolToInchiKey)(self._molecule, options="-FixedH"))
+        except Chem.AtomValenceException as error:
+            result = f"invalid ({error})"
+
+        return result
 
     @property
     def n_atoms(self) -> int:
