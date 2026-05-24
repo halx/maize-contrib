@@ -2,6 +2,7 @@
 
 # pylint: disable=import-outside-toplevel, import-error
 
+import os
 from collections import defaultdict
 from copy import deepcopy
 import csv
@@ -429,22 +430,27 @@ class SaveSingleLibrary(Node):
         tags = self.output_tags.value if self.output_tags.is_set else None
 
         # Increment filename if it already exists, useful for REINVENT
-        base = file = self.file.filepath
-        if self.increment.value:
-            i = 1
-            while file.exists():
-                file = base.parent / f"{base.stem}-{i}{base.suffix}"
-                i += 1
+        base = filename = self.file.filepath
 
         if self.metadata.ready():
             metadata = self.metadata.receive()
 
             if "iteration" in metadata:
-                step_num = metadata['iteration']
-                file = base.parent / f"{base.stem}-{step_num}{base.suffix}"
+                step_num = metadata["iteration"]
+
+                if not base.parent.exists():
+                    os.makedirs(base.parent)
+
+                filename = (base.parent / base.name(step=step_num)).resolve()
+        elif self.increment.value:
+            i = 1
+
+            while filename.exists():
+                filename = (base.parent / f"{base.stem}-{i}{base.suffix}").resolve()
+                i += 1
 
         save_sdf_library(
-            file,
+            filename,
             mols,
             conformers=self.all_conformers.value,
             tags=tags,
