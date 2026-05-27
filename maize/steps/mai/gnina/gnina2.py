@@ -64,7 +64,7 @@ class _GninaParameters(Node, register=False):
     out: Output[list[IsomerCollection]] = Output()
     """Docked molecules with conformations and scores attached"""
 
-    inp_ref: Input[list[Isomer] | Isomer | str] = Input(optional=True)
+    inp_ref: Input[Isomer | str] = Input(optional=True)
     """Reference pose input. A single Isomer or compound name for single-receptor
     docking, or a list of Isomers (one per receptor) for ensemble docking."""
 
@@ -79,7 +79,7 @@ class _GninaParameters(Node, register=False):
     mode: Parameter[Literal[MODES]] = Parameter()
     """Docking mode."""
 
-    search_center: Parameter[list[tuple[float, float, float]] | tuple[float, float, float]] = (
+    search_center: Parameter[tuple[float, float, float]] = (
         Parameter(optional=True)
     )
     """Center of the search space. A single (x, y, z) tuple (broadcast to all
@@ -170,14 +170,13 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         self.logger.debug("Molecules in: %d", len(mols))
         smilies = {mol.name: mol.smiles for mol in mols}
 
-        refs = self._resolve_refs(mols, n_receptors)
-        search_centers = self._resolve_search_centers(n_receptors)
+        ref = self._resolve_ref(mols)
         mode = self.mode.value
 
         gpu_ok, mps_only = self._get_gpu_status()
 
         is_covalent, fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._prepare_mode(
-            mode, mols, refs
+            mode, mols, ref
         )
 
         kekulize = mode != "fragment_covalent"
@@ -192,7 +191,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             output = Path(OUTPUT_FILENAME.format(i))
 
             command = self._build_base_command(inputs, receptor, output)
-            command = self._append_mode_flags(command, mode, i, receptors, refs, search_centers)
+            command = self._append_mode_flags(command, mode, i, receptors)
 
             command = self._append_cnn_flags(command)
             command += f"--cnn_rotation {self.n_cnn_rot.value} "
@@ -224,35 +223,17 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             orig_dummy_loc=orig_dummy_loc,
         )
 
-    def _resolve_refs(self, mols: list[IsomerCollection], n_receptors: int) -> list[Isomer] | None:
+    def _resolve_ref(self, mols: list[IsomerCollection]) -> Isomer | None:
         """Resolve reference poses into a list matching the number of receptors."""
         raw_ref = self.inp_ref.receive_optional()
+
         if raw_ref is None:
             return None
-        if isinstance(raw_ref, list):
-            if len(raw_ref) != n_receptors:
-                raise ValueError(
-                    f"Number of references ({len(raw_ref)}) does not match "
-                    f"number of receptors ({n_receptors})"
-                )
-            return raw_ref
-        if isinstance(raw_ref, str):
-            return [find_mol(mols, value=raw_ref)] * n_receptors
-        return [raw_ref] * n_receptors
 
-    def _resolve_search_centers(self, n_receptors: int) -> list[tuple[float, float, float]] | None:
-        """Resolve search centers into a list matching the number of receptors."""
-        if not self.search_center.is_set:
-            return None
-        raw_center = self.search_center.value
-        if isinstance(raw_center, list):
-            if len(raw_center) != n_receptors:
-                raise ValueError(
-                    f"Number of search centers ({len(raw_center)}) does not match "
-                    f"number of receptors ({n_receptors})"
-                )
-            return raw_center
-        return [raw_center] * n_receptors
+        if isinstance(raw_ref, str):
+            return find_mol(mols, value=raw_ref)
+
+        return raw_ref
 
     def _get_gpu_status(self) -> tuple[bool, bool]:
         """Determine GPU availability and MPS requirement."""
@@ -272,7 +253,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         self,
         mode: str,
         mols: list[IsomerCollection],
-        refs: list[Isomer] | None,
+        ref: Isomer | None,
     ) -> tuple[bool, "Chem.Mol | None", "int | None", "int | None"]:
         """One-time preparation before the receptor loop. Modes that modify mols
         in-place (fragment_covalent, fragment_local_only) do so here."""
@@ -283,7 +264,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         if mode == "fragment_covalent":
             is_covalent = True
-            fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._prepare_covalent(mols, refs)
+            fragment_mol_ref, ap_frag_idx, orig_dummy_loc = self._prepare_covalent(mols, ref)
         elif mode == "fragment_local_only":
             ref_mol = Chem.MolFromMolFile(self.local_opt_ref.filepath, removeHs=True)
             prepare_mols_for_local(mols, ref_mol)
@@ -308,31 +289,31 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         mode: str,
         receptor_idx: int,
         receptors: list[Path],
-        refs: list[Isomer] | None,
-        search_centers: list[tuple[float, float, float]] | None,
+        ref: Isomer | None,
     ) -> str:
         """Append per-receptor mode-specific flags to the command."""
 
         if mode == "dock_with_ref":
             ref_file = Path(POSE_REF_FILENAME.format(receptor_idx))
-            if refs is not None:
-                refs[receptor_idx].to_sdf(ref_file)
+            ref.to_sdf(ref_file)
+
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
             command += f"--autobox_add {self.autobox_add.value} "
+
             if self.flex_dist.value > 0.1:
                 command += f"--flexdist_ligand {ref_file.resolve().as_posix()} "
                 command += f"--flexdist {self.flex_dist.value} "
 
         elif mode == "dock_no_ref":
-            x, y, z = search_centers[receptor_idx]
+            x, y, z = self.search_center.value
             dx, dy, dz = self.search_range.value
             command += f"--center_x {x} --center_y {y} --center_z {z} "
             command += f"--size_x {dx} --size_y {dy} --size_z {dz} "
 
         elif mode == "fragment_covalent":
             ref_file = Path(POSE_REF_FILENAME.format(receptor_idx))
-            if refs is not None:
-                refs[receptor_idx].to_sdf(ref_file)
+            if ref is not None:
+                ref[receptor_idx].to_sdf(ref_file)
             covalent_ap = self.covalent_ap_fragment.value
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
             command += f"--autobox_add {self.autobox_add.value} "
@@ -456,7 +437,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         self.out.send(mols_out)
 
     def _prepare_covalent(
-        self, mols: list[IsomerCollection], refs: list[Isomer] | None
+        self, mols: list[IsomerCollection], ref: Isomer | None
     ) -> tuple["Chem.Mol", int, int]:
         """One-time preparation for covalent fragment docking: validate inputs,
         load the fragment reference, and modify mols in-place."""
@@ -465,7 +446,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             self.logger.critical(msg)
             raise ValueError(msg)
 
-        if refs is None or len(refs) == 0:
+        if ref is None or len(ref) == 0:
             msg = "Reference pose is required for covalent docking"
             self.logger.critical(msg)
             raise ValueError(msg)
