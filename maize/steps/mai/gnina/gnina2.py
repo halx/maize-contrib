@@ -39,7 +39,7 @@ ScoreType = Literal["default", "ad4_scoring", "dkoes_fast", "dkoes_scoring", "vi
 CNNScoreType = Literal["none", "rescore", "refinement", "metrorescore", "metrorefine", "all"]
 PDBFileType = Annotated[Path, Suffix("pdb", "pdbqt")]
 INPUT_FILENAME = "mols.sdf"
-POSE_REF_FILENAME = "ref-{}.sdf"
+POSE_REF_FILENAME = "ref.sdf"
 OUTPUT_FILENAME = "output-{}.sdf"
 
 
@@ -292,7 +292,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         """Append per-receptor mode-specific flags to the command."""
 
         if mode == "dock_with_ref":
-            ref_file = Path(POSE_REF_FILENAME.format(receptor_idx))
+            ref_file = Path(POSE_REF_FILENAME)
             ref.to_sdf(ref_file)
 
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
@@ -309,7 +309,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             command += f"--size_x {dx} --size_y {dy} --size_z {dz} "
 
         elif mode == "fragment_covalent":
-            ref_file = Path(POSE_REF_FILENAME.format(receptor_idx))
+            ref_file = Path(POSE_REF_FILENAME)
             ref.to_sdf(ref_file)
 
             covalent_ap = self.covalent_ap_fragment.value
@@ -373,6 +373,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             )
             for output in outputs
         ]
+        #self.logger.debug(f"=== {}")
 
         is_ensemble = len(libs) > 1
 
@@ -383,6 +384,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         iso._molecule = combine_iso_with_fragment(
                             iso, fragment_mol_ref, ap_frag_idx, orig_dummy_loc
                         )
+
                     if is_ensemble:
                         iso.set_tag("ensemble", i)
 
