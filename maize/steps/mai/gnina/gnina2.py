@@ -212,7 +212,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                 prefer_batch=True,
             )
 
-        self._process_results(
+        mols = self._process_results(
             outputs=outputs,
             smilies=smilies,
             is_covalent=is_covalent,
@@ -220,6 +220,8 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             ap_frag_idx=ap_frag_idx,
             orig_dummy_loc=orig_dummy_loc,
         )
+
+        self.out.send(mols)
 
     def _resolve_ref(self, mols: list[IsomerCollection]) -> Isomer | None:
         """Resolve reference poses into a list matching the number of receptors."""
@@ -373,7 +375,6 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             )
             for output in outputs
         ]
-        #self.logger.debug(f"=== {}")
 
         is_ensemble = len(libs) > 1
 
@@ -395,6 +396,9 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         except (KeyError, TypeError, ValueError):
                             continue
 
+                    for conformer in iso.conformers:
+                        self.logger.debug(f"=== {conformer=}")
+
         if is_ensemble:
             mols_out = reduce(partial(merge_libraries, overwrite_conformers=False), libs)
         else:
@@ -402,9 +406,9 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         found_smilies: set[str] = set()
 
+        self.logger.debug(f"=== {mols_out=}")
         for mol in mols_out:
             for iso in mol.molecules:
-
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                     for conf in iso.conformers:
                         try:
@@ -420,6 +424,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                     iso.name or iso.inchi,
                     iso.primary_score,
                 )
+                self.logger.debug(f"=== {iso=}")
 
             for name, smi in smilies.items():
                 if mol.name == name:
@@ -429,12 +434,14 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
 
+        save_sdf_library(Path("_gnina2.sdf"), mols_out, split_strategy="none", conformers=True)
         not_found = set(smilies.values()) - found_smilies
         if not_found:
             self.logger.debug("SMILES not found: %s", not_found)
 
         self.logger.debug("Molecules out: %d", len(mols_out))
-        self.out.send(mols_out)
+
+        return mols_out
 
     def _prepare_covalent(
         self, mols: list[IsomerCollection], ref: Isomer | None
