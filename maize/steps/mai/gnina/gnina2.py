@@ -79,9 +79,7 @@ class _GninaParameters(Node, register=False):
     mode: Parameter[Literal[MODES]] = Parameter()
     """Docking mode."""
 
-    search_center: Parameter[tuple[float, float, float]] = (
-        Parameter(optional=True)
-    )
+    search_center: Parameter[tuple[float, float, float]] = Parameter(optional=True)
     """Center of the search space. A single (x, y, z) tuple (broadcast to all
     receptors) or a list of (x, y, z) tuples (one per receptor)."""
 
@@ -191,7 +189,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             output = Path(OUTPUT_FILENAME.format(i))
 
             command = self._build_base_command(inputs, receptor, output)
-            command = self._append_mode_flags(command, mode, i, receptors)
+            command = self._append_mode_flags(command, mode, i, receptors, ref)
 
             command = self._append_cnn_flags(command)
             command += f"--cnn_rotation {self.n_cnn_rot.value} "
@@ -312,8 +310,8 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         elif mode == "fragment_covalent":
             ref_file = Path(POSE_REF_FILENAME.format(receptor_idx))
-            if ref is not None:
-                ref[receptor_idx].to_sdf(ref_file)
+            ref.to_sdf(ref_file)
+
             covalent_ap = self.covalent_ap_fragment.value
             command += f"--autobox_ligand {ref_file.resolve().as_posix()} "
             command += f"--autobox_add {self.autobox_add.value} "
