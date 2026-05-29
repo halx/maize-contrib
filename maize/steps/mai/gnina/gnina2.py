@@ -387,9 +387,8 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         )
 
                     if is_ensemble:
-                        # FIXME: unclear why this is necessary
-                        for conf in iso.conformers:
-                            conf.set_tag("ensemble", i)
+                        for conf in iso.conformers:  # gets lost in best isomer filter
+                            conf.set_tag("gnina_ensemble_no", i)
 
                     for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                         try:
