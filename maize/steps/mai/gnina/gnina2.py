@@ -387,7 +387,9 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         )
 
                     if is_ensemble:
-                        iso.set_tag("ensemble", i)
+                        # FIXME: unclear why this is necessary
+                        for conf in iso.conformers:
+                            conf.set_tag("ensemble", i)
 
                     for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                         try:
@@ -396,15 +398,10 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         except (KeyError, TypeError, ValueError):
                             continue
 
-                    for conformer in iso.conformers:
-                        self.logger.debug(f"=== {conformer=}")
-
         if is_ensemble:
             mols_out = reduce(partial(merge_libraries, overwrite_conformers=False), libs)
         else:
             mols_out = libs[0]
-
-        found_smilies: set[str] = set()
 
         self.logger.debug(f"=== {mols_out=}")
         for mol in mols_out:
@@ -429,17 +426,9 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             for name, smi in smilies.items():
                 if mol.name == name:
                     mol.smiles = smi
-                    found_smilies.add(smi)
                     break
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
-
-        save_sdf_library(Path("_gnina2.sdf"), mols_out, split_strategy="none", conformers=True)
-        not_found = set(smilies.values()) - found_smilies
-        if not_found:
-            self.logger.debug("SMILES not found: %s", not_found)
-
-        self.logger.debug("Molecules out: %d", len(mols_out))
 
         return mols_out
 
