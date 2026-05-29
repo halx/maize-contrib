@@ -62,34 +62,22 @@ class BestIsomerFilter(Node):
 
     def run(self) -> None:
         mols = self.inp.receive()
-        self.logger.debug(f"-=- Molecules in: {len(mols)=}")
         tag = self.score_tag.value if self.score_tag.is_set else None
 
         # Get aggregation order, default is lower is better ("min")
         desc = self.descending.value
-        icnt = 0
 
         for mol in mols:
             for iso in mol.molecules:
-                icnt += 1
-
                 if tag is not None and tag in iso.score_agg:
                     desc = iso.score_agg[tag] == "min"
                     break
 
-        self.logger.debug(f"-=- #isomers = {icnt}")
         sorter = functools.partial(self.sorter, tag=tag, desc=desc)
         isomers = [sorted(mol.molecules, key=sorter, reverse=not desc) for mol in mols]
-        #self.logger.debug(f"-=- {isomers=}")
         new_mols = [
             IsomerCollection([isos[0]]) if isos else IsomerCollection([]) for isos in isomers
         ]
-        self.logger.debug(f"-=- Molecules out: {len(new_mols)=}")
-
-        with Chem.SDWriter("_test_bestisomer.sdf") as writer:
-            for isomer_collection in new_mols:
-                for isomer in isomer_collection.molecules:
-                    writer.write(isomer._molecule)
 
         self.out.send(new_mols)
 
@@ -155,6 +143,11 @@ class BestConformerFilter(Node):
                 iso.clear_conformers()
                 iso.add_conformer(best)
 
+                # mol has the tag, iso has the tag, conformer has the tag...
+                if tag is not None:
+                    mol.set_tag(tag, best.scores[tag])
+
+        # looks like that mol or iso tag gets written out
         self.out.send(mols)
 
 
