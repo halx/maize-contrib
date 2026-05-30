@@ -165,7 +165,6 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         is_ensemble = n_receptors > 1
 
         mols = self.inp.receive()
-        self.logger.debug("Molecules in: %d", len(mols))
         smilies = {mol.name: mol.smiles for mol in mols}
 
         ref = self._resolve_ref(mols)
@@ -180,7 +179,6 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         kekulize = mode != "fragment_covalent"
         inputs = Path(INPUT_FILENAME)
         save_sdf_library(inputs, mols, split_strategy="none", conformers=True, kekulize=kekulize)
-        self.logger.debug("%d molecules saved to %s", len(mols), inputs)
 
         commands: list[str] = []
         outputs: list[Path] = []
@@ -199,8 +197,6 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             outputs.append(output)
 
         cuda_mps_flag = mps_only and not self.batch_options.is_set and self.gpu.value
-
-        self.logger.debug("command=%s", commands[0])
 
         if is_ensemble:
             self.run_multi(commands, cuda_mps=cuda_mps_flag, n_jobs=self.n_parallel.value)
@@ -387,8 +383,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         )
 
                     if is_ensemble:
-                        for conf in iso.conformers:  # gets lost in best isomer filter
-                            conf.set_tag("gnina_ensemble_no", i)
+                        iso.set_tag("gnina_ensemble_no", i)
 
                     for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                         try:
@@ -397,12 +392,17 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                         except (KeyError, TypeError, ValueError):
                             continue
 
-        if is_ensemble:
-            mols_out = reduce(partial(merge_libraries, overwrite_conformers=False), libs)
-        else:
-            mols_out = libs[0]
+        mols_out = []
 
-        self.logger.debug(f"=== {mols_out=}")
+        for row in zip(*libs):
+            isomers = []
+
+            for mol in row:
+                for iso in mol.molecules:
+                    isomers.append(iso)
+
+            mols_out.append(IsomerCollection(isomers))
+
         for mol in mols_out:
             for iso in mol.molecules:
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
@@ -415,12 +415,12 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
                 iso.primary_score_tag = self.PRIMARY_SCORE_TAG
                 iso.set_tag("score_type", "oracle")
                 iso.set_tag("origin", self.name)
+
                 self.logger.info(
                     "Parsed isomer '%s', score %s",
                     iso.name or iso.inchi,
                     iso.primary_score,
                 )
-                self.logger.debug(f"=== {iso=}")
 
             for name, smi in smilies.items():
                 if mol.name == name:
