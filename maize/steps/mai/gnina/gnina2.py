@@ -441,7 +441,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             self.logger.critical(msg)
             raise ValueError(msg)
 
-        if ref is None or len(ref) == 0:
+        if ref is None:
             msg = "Reference pose is required for covalent docking"
             self.logger.critical(msg)
             raise ValueError(msg)
