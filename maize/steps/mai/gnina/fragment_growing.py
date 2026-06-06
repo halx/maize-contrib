@@ -114,10 +114,10 @@ def get_heavy_substructure_indices(mol: Chem.Mol, frag: Chem.Mol, dummy_loc: int
     params.makeBondsGeneric = True  # tautomers
     query = Chem.AdjustQueryProperties(frag, params)
 
-    match_idx = mol.GetSubstructMatches(query, useChirality=False)
+    match_idx = mol.GetSubstructMatches(query, maxMatches=1, useChirality=False)
 
     if not match_idx or len(match_idx) != 1:
-        raise ValueError("Molecule does not match fragment or matches more than once")
+        raise ValueError(f"Molecule does not match fragment or matches more than once: {match_idx}, {Chem.MolToSmiles(mol)}, {Chem.MolToSmiles(frag)}")
 
     heavy_idx = list(match_idx[0])
 

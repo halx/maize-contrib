@@ -286,6 +286,9 @@ def save_sdf_library(
 
             for i, mol in enumerate(mols):
                 for j, iso in enumerate(mol.molecules):
+                    if iso._molecule is None:
+                        continue
+
                     if split_strategy == "schrodinger":
                         iso.name = f"{i}:{j}"
 
