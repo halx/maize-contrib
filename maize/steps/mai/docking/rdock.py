@@ -78,7 +78,7 @@ class rDock(Node):
         # align molecules to reference
         if self.tethered.value:
             ref_mol = self.tethered_ref_mol.value
-            rmsd = pre_align_to_ref(mols, ref_mol)
+            pre_align_to_ref(mols, ref_mol)
 
         command = (
             f"{self.runnable['rdock']} "
@@ -115,7 +115,7 @@ def pre_align_to_ref(mols, ref_mol):
 
             atom_map = list(zip(mol_match, ref_match))
 
-            rmsd = rdMolAlign.AlignMol(
+            _ = rdMolAlign.AlignMol(
                 mol,
                 ref_mol,
                 atomMap=atom_map
