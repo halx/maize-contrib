@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from rdkit.Chem import rdMolAlign
+from rdkit.Chem import AllChem, rdMolAlign
 
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
@@ -60,7 +60,7 @@ class rDock(Node):
     """Whether tethered (scaffold/template) docking is requested.
     Requires pre-alignment of molecules to reference."""
 
-    tethered_ref_mol: Input[Isomer | str] = Input(optional=True)
+    tethered_ref_mol: Input[Isomer] = Input(optional=True)
     """Reference molecule for pre-alignment of molecules to dock."""
 
     def run(self) -> None:
@@ -100,19 +100,16 @@ class rDock(Node):
 
 
 def pre_align_to_ref(mols, ref_mol):
-    ref_match = [i for i in range(ref_mol.GetNumAtoms())]
 
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
             mol_match = iso_mol.GetSubstructMatch(ref_mol)
 
-            if not ref_match or not mol_match:
+            if not mol_match:
                 raise ValueError("SMARTS not found")
 
-            atom_map = list(zip(mol_match, ref_match))
-
-            _ = rdMolAlign.AlignMol(mol, ref_mol, atomMap=atom_map)
+            iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
 
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
             mol.SetProp("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
