@@ -1,8 +1,7 @@
 """Docking with rDock"""
 
-from functools import partial, reduce
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Literal
 
 from rdkit.Chem import rdMolAlign
 
@@ -11,14 +10,10 @@ from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, 
 from maize.utilities.chem import (
     Isomer,
     IsomerCollection,
-    find_mol,
     load_sdf_library,
-    merge_libraries,
     save_sdf_library,
 )
 from maize.utilities.validation import FileValidator
-from maize.utilities.resources import cpu_count
-from maize.utilities.execution import GPU
 
 # All modes are encoded in their respective .prm files which are found
 # through setting environment variable RBT_ROOT
@@ -35,8 +30,7 @@ OUTPUT_PREFIX = "rDock_output"  # will create SD file with .sd extensions
 
 
 class rDock(Node):
-    """
-    """
+    """ """
 
     tags = {"chemistry", "docking", "scorer", "tagger", "ensemble"}
 
@@ -96,7 +90,10 @@ class rDock(Node):
         )
 
         mols = load_sdf_library(
-            Path(OUTPUT_PREFIX + '.sd'), split_strategy="schrodinger", sanitize=False, renumber=False
+            Path(OUTPUT_PREFIX + ".sd"),
+            split_strategy="schrodinger",
+            sanitize=False,
+            renumber=False,
         )
 
         self.out.send(mols)
@@ -115,11 +112,7 @@ def pre_align_to_ref(mols, ref_mol):
 
             atom_map = list(zip(mol_match, ref_match))
 
-            _ = rdMolAlign.AlignMol(
-                mol,
-                ref_mol,
-                atomMap=atom_map
-            )
+            _ = rdMolAlign.AlignMol(mol, ref_mol, atomMap=atom_map)
 
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
             mol.SetProp("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
