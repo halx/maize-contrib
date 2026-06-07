@@ -66,21 +66,22 @@ class rDock(Node):
 
     def run(self) -> None:
         mols = self.inp.receive()
+        smilies = {mol.name: mol.smiles for mol in mols}
 
         inputs = Path(INPUT_FILENAME)
         save_sdf_library(inputs, mols, split_strategy="none", conformers=True)
 
         # align molecules to reference
         if self.tethered.value:
-            ref_mol = self.tethered_ref_mol.value
-            pre_align_to_ref(mols, ref_mol)
+            ref_mol = self.tethered_ref_mol.receive_optional()
+            align_to_reference(mols, ref_mol)
 
         command = (
             f"{self.runnable['rdock']} "
             f"-i {INPUT_FILENAME} "
             f"-o {OUTPUT_PREFIX} "
             f"-r {self.sys_prm} "
-            f"-p {self.mode}.rpm "
+            f"-p {self.mode}.prm "
             f"-n {self.num_runs}"
         )
 
@@ -98,6 +99,13 @@ class rDock(Node):
         )
 
         self.add_scores(mols)
+
+        for mol in mols:
+            for name, smiles in smilies.items():
+                if mol.name == name:
+                    mol.smiles = smiles
+                    break
+
         self.out.send(mols)
 
     def add_scores(self, mols):
@@ -115,7 +123,7 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def pre_align_to_ref(mols, ref_mol):
+def align_to_reference(mols, ref_mol):
 
     for mol in mols:
         for iso in mol.molecules:
