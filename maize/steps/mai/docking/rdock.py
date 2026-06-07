@@ -34,8 +34,9 @@ class rDock(Node):
 
     tags = {"chemistry", "docking", "scorer", "tagger", "ensemble"}
 
-    SCORE_TAG = "SCORE.INTER"
-    SCORE_TAG_AGG = "min"
+    SCORE_TAGS = "SCORE.INTER"
+    SCORE_TAGS_AGG = tuple[Literal["min", "max"], ...] = "min"
+    PRIMARY_SCORE_TAG = "SCORE.INTER"
 
     required_callables = ["rdock"]
 
@@ -96,7 +97,22 @@ class rDock(Node):
             renumber=False,
         )
 
+        self.add_scores(mols)
         self.out.send(mols)
+
+    def add_scores(self, mols):
+        for mol in mols:
+            for iso in mol.molecules:
+                for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
+                    for conf in iso.conformers:
+                        try:
+                            conf.add_score_tag(score_tag, agg=agg)
+                        except (KeyError, TypeError):
+                            continue
+
+                iso.primary_score_tag = self.PRIMARY_SCORE_TAG
+                iso.set_tag("score_type", "oracle")
+                iso.set_tag("origin", self.name)
 
 
 def pre_align_to_ref(mols, ref_mol):
