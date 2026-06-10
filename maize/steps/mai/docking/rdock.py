@@ -125,7 +125,14 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def align_to_reference(mols, ref_isomer, logger):
+def align_to_reference(mols, ref_isomer, logger) -> None:
+    """Align the molecules to the reference
+
+    Updates molecules with new coordinates.
+
+    :param mols: molecules to align
+    :ref_isomer: refernce to align to
+    """
 
     ref_mol = AllChem.RemoveHs(ref_isomer._molecule)
 
@@ -152,21 +159,28 @@ def align_to_reference(mols, ref_isomer, logger):
             iso.set_tag("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
 
 
-def constraindt_align(mol, core, match, get_forcefield=UFFGetMoleculeForceField):
-    """
+def constraindt_align(mol, ref, match, get_forcefield=UFFGetMoleculeForceField):
+    """Constraint alignment of a 3D molecule to a core
+
     Essentially the ConstraintEmebed code with the embedding because it mayy
     have a high failure rate and we expect the molecule to be 3D already
-    anyway.
+    anyway.  We assume mol has only one conformer.
+
+    :param mol: the molecule to align
+    :param ref: the reference to match to
+    :param match: the matching indices between mol and core
+    :param get_forcefield: optional forcefield getter
+    :returns: molecule with new coordinates
     """
 
     align_mao = [(j, i) for i, j in enumerate(match)]
 
-    AlignMol(mol, core, atomMap=align_mao)
+    AlignMol(mol, ref, atomMap=align_mao)
     forcefield = get_forcefield(mol, confId=0)
 
-    conf = core.GetConformer()
+    conf = ref.GetConformer()
 
-    for i in range(core.GetNumAtoms()):
+    for i in range(ref.GetNumAtoms()):
         pos = conf.GetAtomPosition(i)
         idx = forcefield.AddExtraPoint(pos.x, pos.y, pos.z, fixed=True) - 1
         forcefield.AddDistanceConstraint(idx, match[i], 0, 0, 100.0)
@@ -180,6 +194,6 @@ def constraindt_align(mol, core, match, get_forcefield=UFFGetMoleculeForceField)
         success = forcefield.Minimize(energyTol=1e-4, forceTol=1e-3)
         max_steps -= 1
 
-    AlignMol(mol, core, atomMap=align_mao)
+    AlignMol(mol, ref, atomMap=align_mao)
 
     return mol
