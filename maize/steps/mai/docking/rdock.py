@@ -123,7 +123,9 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def align_to_reference(mols, ref_mol):
+def align_to_reference(mols, ref_isomer):
+
+    ref_mol = AllChem.RemoveHs(ref_isomer._molecule)
 
     for mol in mols:
         for iso in mol.molecules:
@@ -131,7 +133,7 @@ def align_to_reference(mols, ref_mol):
             mol_match = iso_mol.GetSubstructMatch(ref_mol)
 
             if not mol_match:
-                raise ValueError("SMARTS not found")
+                raise ValueError(f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(_ref_mol)}")
 
             iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
 
