@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Literal
 
 from rdkit.Chem import AllChem
+from rdkit.Chem.rdMolAlign import AlignMol
+from rdkit.Chem.rdForceFieldHelpers import UFFGetMoleculeForceField
 
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
@@ -140,13 +142,7 @@ def align_to_reference(mols, ref_isomer, logger):
 
             # FIXME: use align followed by constraint minimization?
             try:
-                iso_mol = AllChem.ConstrainedEmbed(
-                    iso_mol,
-                    ref_mol,
-                    useTethers=True,
-                    forceTol=0.01,
-                    numZeroFail=3,
-                )
+                iso_mol = constraindt_align(iso_mol, ref_mol, mol_match)
             except:
                 logger.debug(f"{AllChem.MolToSmiles(iso_mol)} failed to embed")
                 continue
@@ -154,3 +150,36 @@ def align_to_reference(mols, ref_isomer, logger):
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
             iso.set_tag("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
+
+
+def constraindt_align(mol, core, match, get_forcefield=UFFGetMoleculeForceField):
+    """
+    Essentially the ConstraintEmebed code with the embedding because it mayy
+    have a high failure rate and we expect the molecule to be 3D already
+    anyway.
+    """
+
+    align_mao = [(j, i) for i, j in enumerate(match)]
+
+    AlignMol(mol, core, atomMap=align_mao)
+    forcefield = get_forcefield(mol, confId=0)
+
+    conf = core.GetConformer()
+
+    for i in range(core.GetNumAtoms()):
+        pos = conf.GetAtomPosition(i)
+        idx = forcefield.AddExtraPoint(pos.x, pos.y, pos.z, fixed=True) - 1
+        forcefield.AddDistanceConstraint(idx, match[i], 0, 0, 100.0)
+
+    forcefield.Initialize()
+
+    max_steps = 4
+    success = 1
+
+    while success and max_steps:
+        success = forcefield.Minimize(energyTol=1e-4, forceTol=1e-3)
+        max_steps -= 1
+
+    AlignMol(mol, core, atomMap=align_mao)
+
+    return mol
