@@ -145,7 +145,7 @@ class BestConformerFilter(Node):
 
                 # mol has the tag, iso has the tag, conformer has the tag...
                 if tag is not None:
-                    mol.set_tag(tag, best.scores[tag])
+                    mol.add_score(tag, best.scores[tag])
 
         # looks like that mol or iso tag gets written out
         self.out.send(mols)
