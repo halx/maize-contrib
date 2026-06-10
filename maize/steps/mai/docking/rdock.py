@@ -35,7 +35,7 @@ class rDock(Node):
     tags = {"chemistry", "docking", "scorer", "tagger", "ensemble"}
 
     SCORE_TAGS = "SCORE.INTER"
-    SCORE_TAGS_AGG = tuple[Literal["min", "max"], ...] = "min"
+    SCORE_TAGS_AGG: tuple[Literal["min", "max"], ...] = ("min",)
     PRIMARY_SCORE_TAG = "SCORE.INTER"
 
     required_callables = ["rdock"]

@@ -19,6 +19,7 @@ from .glide import Glide
 from .glide_grid_generation import GlideGridGenerator
 from .aevplig import AEVPLIG
 from .boltz2 import Boltz2
+from .rdock import rDock
 
 __all__ = [
     "Glide",
