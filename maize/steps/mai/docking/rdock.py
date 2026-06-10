@@ -34,8 +34,8 @@ class rDock(Node):
 
     tags = {"chemistry", "docking", "scorer", "tagger", "ensemble"}
 
-    #SCORE_TAGS: tuple[str, ...] = ("SCORE.INTER", )
-    #SCORE_TAGS_AGG: tuple[Literal["min", "max"], ...] = ("min",)
+    # SCORE_TAGS: tuple[str, ...] = ("SCORE.INTER", )
+    # SCORE_TAGS_AGG: tuple[Literal["min", "max"], ...] = ("min",)
     SCORE_TAGS = "SCORE.INTER"
     SCORE_TAGS_AGG = "min"
     PRIMARY_SCORE_TAG = "SCORE.INTER"
@@ -75,7 +75,7 @@ class rDock(Node):
         # align molecules to reference
         if self.tethered.value:
             ref_mol = self.tethered_ref_mol.receive_optional()
-            align_to_reference(mols, ref_mol)
+            align_to_reference(mols, ref_mol, self.logger)
 
         save_sdf_library(inputs, mols, split_strategy="none", conformers=True)
 
@@ -123,7 +123,7 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def align_to_reference(mols, ref_isomer):
+def align_to_reference(mols, ref_isomer, logger):
 
     ref_mol = AllChem.RemoveHs(ref_isomer._molecule)
 
@@ -134,12 +134,22 @@ def align_to_reference(mols, ref_isomer):
             mol_match = iso_mol.GetSubstructMatch(ref_mol)
 
             if not mol_match:
-                raise ValueError(f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(ref_mol)}")
+                raise ValueError(
+                    f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(ref_mol)}"
+                )
 
             # FIXME: use align followed by constraint minimization?
             try:
-                iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
+                iso_mol = AllChem.ConstrainedEmbed(
+                    iso_mol,
+                    ref_mol,
+                    useTethers=True,
+                    getForceField=MMFFGetMoleculeForceField,
+                    forceTol=0.01,
+                    numZeroFail=3,
+                )
             except:
+                logger.debug(f"{AllChem.MolToSmiles(iso_mol)} failed to embed")
                 continue
 
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
