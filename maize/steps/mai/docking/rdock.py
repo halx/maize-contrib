@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from rdkit.Chem import AllChem, rdMolAlign
+from rdkit.Chem import AllChem
 
 from maize.core.node import Node
 from maize.core.interface import Parameter, Flag, FileParameter, Suffix, Input, Output
@@ -130,10 +130,11 @@ def align_to_reference(mols, ref_isomer):
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
+            AllChem.FastFindRings(iso_mol)  # unclear why this is needed
             mol_match = iso_mol.GetSubstructMatch(ref_mol)
 
             if not mol_match:
-                raise ValueError(f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(_ref_mol)}")
+                raise ValueError(f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(ref_mol)}")
 
             iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
 
