@@ -136,7 +136,11 @@ def align_to_reference(mols, ref_isomer):
             if not mol_match:
                 raise ValueError(f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(ref_mol)}")
 
-            iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
+            # FIXME: use align followed by constraint minimization?
+            try:
+                iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
+            except:
+                continue
 
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
