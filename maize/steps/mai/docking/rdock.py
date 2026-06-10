@@ -81,7 +81,7 @@ class rDock(Node):
             f"-i {INPUT_FILENAME} "
             f"-o {OUTPUT_PREFIX} "
             f"-r {self.sys_prm} "
-            f"-p {self.mode}.prm "
+            f"-p {self.mode.value}.prm "
             f"-n {self.num_runs}"
         )
 
