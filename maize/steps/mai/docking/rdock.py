@@ -80,11 +80,12 @@ class rDock(Node):
             f"{self.runnable['rdock']} "
             f"-i {INPUT_FILENAME} "
             f"-o {OUTPUT_PREFIX} "
-            f"-r {self.sys_prm} "
+            f"-r {self.sys_prm.value} "
             f"-p {self.mode.value}.prm "
-            f"-n {self.num_runs}"
+            f"-n {self.num_runs.value}"
         )
 
+        self.logger.debug(f"Running rDock as: {command}")
         res = self.run_command(
             command,
             verbose=True,
