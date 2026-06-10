@@ -69,12 +69,13 @@ class rDock(Node):
         smilies = {mol.name: mol.smiles for mol in mols}
 
         inputs = Path(INPUT_FILENAME)
-        save_sdf_library(inputs, mols, split_strategy="none", conformers=True)
 
         # align molecules to reference
         if self.tethered.value:
             ref_mol = self.tethered_ref_mol.receive_optional()
             align_to_reference(mols, ref_mol)
+
+        save_sdf_library(inputs, mols, split_strategy="none", conformers=True)
 
         command = (
             f"{self.runnable['rdock']} "
@@ -141,4 +142,4 @@ def align_to_reference(mols, ref_isomer):
 
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
-            iso_mol.SetProp("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
+            iso.set_tag("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
