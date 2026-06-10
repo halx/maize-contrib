@@ -144,7 +144,6 @@ def align_to_reference(mols, ref_isomer, logger):
                     iso_mol,
                     ref_mol,
                     useTethers=True,
-                    getForceField=MMFFGetMoleculeForceField,
                     forceTol=0.01,
                     numZeroFail=3,
                 )
