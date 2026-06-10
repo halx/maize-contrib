@@ -138,7 +138,6 @@ def align_to_reference(mols, ref_isomer):
 
             iso_mol = AllChem.ConstrainedEmbed(iso_mol, ref_mol, useTethers=True)
 
+            # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
             tethered_vals = [atom_idx + 1 for atom_idx in mol_match]
-            mol.SetProp("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
-
-    return rmsd
+            iso_mol.SetProp("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
