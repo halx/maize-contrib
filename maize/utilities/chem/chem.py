@@ -345,7 +345,7 @@ def load_sdf_or_mae_library(
     # deteremine if the input is sdf, mae or mae.gz
     file_handle: gzip.GzipFile | str
     input_suffix = file.suffix
-    if input_suffix == ".sdf":
+    if input_suffix == ".sdf" or input_suffix == ".sd":
         log.info("reading from sdf")
         backend = Chem.SDMolSupplier
         file_handle = file.as_posix()
