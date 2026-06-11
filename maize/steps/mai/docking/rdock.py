@@ -70,7 +70,13 @@ class rDock(Node):
 
     def run(self) -> None:
         mols = self.inp.receive()
+
+        # NOTE: rDock may complain about the tethered atoms indices being too large
+        #       which may however be a bug.  To avoid this we reorder the atoms in
+        #       the molecule such that he hydrogens come last, as we only fit the
+        #       molecule on the heavy atoms.
         mols = hydrogens_last(mols)
+
         smilies = {mol.name: mol.smiles for mol in mols}
         #charges = get_formal_charges(mols)
 
@@ -128,7 +134,10 @@ class rDock(Node):
 
 
 def hydrogens_last(mols: IsomerCollection):
-    """Reorder atoms such that hydrogens come last"""
+    """Reorder atoms such that hydrogens come last
+
+    :param mols: molecules to be reordered
+    """
 
     new_mols = []
 
