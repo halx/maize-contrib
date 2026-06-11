@@ -130,17 +130,23 @@ class rDock(Node):
 def hydrogens_last(mols: IsomerCollection):
     """Reorder atoms such that hydrogens come last"""
 
+    new_mols = []
+
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
+            iso_name = iso.name
+
             heavy = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() > 1]
             hydrogens = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() == 1]
-
             new_order = heavy + hydrogens
 
-            iso._molecule = Chem.RenumberAtoms(iso_mol, new_order)
+            iso._molecule = Chem.RenumberAtoms(iso_mol, new_order)  # this deletes all Mol properties
+            iso.name = iso_name
 
-    return mols
+        new_mols.append(mol)
+
+    return new_mols
 
 
 def get_formal_charges(mols: IsomerCollection) -> dict[float]:
