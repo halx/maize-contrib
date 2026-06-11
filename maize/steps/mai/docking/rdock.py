@@ -1,9 +1,9 @@
 """Docking with rDock"""
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Callable
 
-from rdkit.Chem import AllChem
+from rdkit import Chem
 from rdkit.Chem.rdMolAlign import AlignMol
 from rdkit.Chem.rdForceFieldHelpers import UFFGetMoleculeForceField
 
@@ -70,7 +70,9 @@ class rDock(Node):
 
     def run(self) -> None:
         mols = self.inp.receive()
+        mols = hydrogens_last(mols)
         smilies = {mol.name: mol.smiles for mol in mols}
+        #charges = get_formal_charges(mols)
 
         inputs = Path(INPUT_FILENAME)
 
@@ -125,7 +127,34 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def align_to_reference(mols, ref_isomer, logger) -> None:
+def hydrogens_last(mols: IsomerCollection):
+    """Reorder atoms such that hydrogens come last"""
+
+    for mol in mols:
+        for iso in mol.molecules:
+            iso_mol = iso._molecule
+            heavy = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() > 1]
+            hydrogens = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() == 1]
+
+            new_order = heavy + hydrogens
+
+            iso_mol = Chem.RenumberAtoms(iso_mol, new_order)
+
+    return mols
+
+
+def get_formal_charges(mols: IsomerCollection) -> dict[float]:
+    charges = {}
+
+    # FIXME: formal charges on atoms!
+    for mol in mols:
+        for iso in mol.molecules:
+            charges[mol.name] = iso._molecule.GetFormalCharge()
+
+    return charges
+
+
+def align_to_reference(mols: IsomerCollection, ref_isomer: Isomer, logger) -> None:
     """Align the molecules to the reference
 
     Updates molecules with new coordinates.
@@ -134,24 +163,24 @@ def align_to_reference(mols, ref_isomer, logger) -> None:
     :ref_isomer: refernce to align to
     """
 
-    ref_mol = AllChem.RemoveHs(ref_isomer._molecule)
+    ref_mol = Chem.RemoveHs(ref_isomer._molecule)
 
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
-            AllChem.FastFindRings(iso_mol)  # unclear why this is needed
+            Chem.FastFindRings(iso_mol)  # unclear why this is needed
             mol_match = iso_mol.GetSubstructMatch(ref_mol)
 
             if not mol_match:
                 raise ValueError(
-                    f"SMARTS not found: {AllChem.MolToSmiles(iso_mol)} {AllChem.MolToSmiles(ref_mol)}"
+                    f"SMARTS not found: {Chem.MolToSmiles(iso_mol)} {Chem.MolToSmiles(ref_mol)}"
                 )
 
             # FIXME: use align followed by constraint minimization?
             try:
                 iso_mol = constraindt_align(iso_mol, ref_mol, mol_match)
             except:
-                logger.debug(f"{AllChem.MolToSmiles(iso_mol)} failed to embed")
+                logger.debug(f"{Chem.MolToSmiles(iso_mol)} failed to embed")
                 continue
 
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
@@ -159,7 +188,12 @@ def align_to_reference(mols, ref_isomer, logger) -> None:
             iso.set_tag("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
 
 
-def constraindt_align(mol, ref, match, get_forcefield=UFFGetMoleculeForceField):
+def constraindt_align(
+    mol: Chem.Mol,
+    ref: Chem.Mol,
+    match: list[int],
+    get_forcefield: Callable = UFFGetMoleculeForceField,
+):
     """Constraint alignment of a 3D molecule to a core
 
     Essentially the ConstraintEmebed code with the embedding because it mayy
