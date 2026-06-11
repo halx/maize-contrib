@@ -78,7 +78,7 @@ class rDock(Node):
         mols = hydrogens_last(mols)
 
         smilies = {mol.name: mol.smiles for mol in mols}
-        #charges = get_formal_charges(mols)
+        # charges = get_formal_charges(mols)
 
         inputs = Path(INPUT_FILENAME)
 
@@ -104,6 +104,11 @@ class rDock(Node):
             verbose=True,
             raise_on_failure=False,
         )
+
+        if res.returncode != 0 or not res.stdout.endswith(b"END OF RUN\n"):
+            self.logger.error(
+                f"rDock failed with return code {res.returncode} and stdout {res.stdout.decode('ascii')}"
+            )
 
         mols = load_sdf_library(
             Path(OUTPUT_PREFIX + ".sd"),
@@ -151,7 +156,9 @@ def hydrogens_last(mols: IsomerCollection):
             hydrogens = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() == 1]
             new_order = heavy + hydrogens
 
-            iso._molecule = Chem.RenumberAtoms(iso_mol, new_order)  # this deletes all Mol properties
+            iso._molecule = Chem.RenumberAtoms(
+                iso_mol, new_order
+            )  # this deletes all Mol properties
 
             for k, v in props.items():
                 iso._molecule.SetProp(k, str(v))
