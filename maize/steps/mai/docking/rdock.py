@@ -135,6 +135,7 @@ def hydrogens_last(mols: IsomerCollection):
     for mol in mols:
         for iso in mol.molecules:
             iso_mol = iso._molecule
+            props = iso_mol.GetPropsAsDict(includePrivate=True)
             iso_name = iso.name
 
             heavy = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() > 1]
@@ -142,6 +143,10 @@ def hydrogens_last(mols: IsomerCollection):
             new_order = heavy + hydrogens
 
             iso._molecule = Chem.RenumberAtoms(iso_mol, new_order)  # this deletes all Mol properties
+
+            for k, v in props.items():
+                iso._molecule.SetProp(k, str(v))
+
             iso.name = iso_name
 
         new_mols.append(mol)
