@@ -138,7 +138,7 @@ def hydrogens_last(mols: IsomerCollection):
 
             new_order = heavy + hydrogens
 
-            iso_mol = Chem.RenumberAtoms(iso_mol, new_order)
+            iso._molecule = Chem.RenumberAtoms(iso_mol, new_order)
 
     return mols
 
