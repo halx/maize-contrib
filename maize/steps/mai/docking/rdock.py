@@ -1,6 +1,7 @@
 """Docking with rDock"""
 
 from pathlib import Path
+from collections import defaultdict
 from typing import Literal, Callable
 
 from rdkit import Chem
@@ -171,14 +172,26 @@ def hydrogens_last(mols: IsomerCollection):
 
 
 def get_formal_charges(mols: IsomerCollection) -> dict[float]:
-    charges = {}
 
-    # FIXME: formal charges on atoms!
+    charges = defaultdict(list)
+
     for mol in mols:
-        for iso in mol.molecules:
-            charges[mol.name] = iso._molecule.GetFormalCharge()
+        for iso in mol.molecules:   # FIXME: may have multiple isomers because of Gypsum
+            for atom in iso._molecule.GetAtoms():
+                if charge := atom.GetFormalCharge() != 0:
+                    idx = atom.GetIdx()
+                    charges[mol.name].append((charge, idx))
 
     return charges
+
+
+def set_formal_charges(mols: IsomerCollection, charges: dict[list]) -> dict[float]:
+
+    for mol in mols:
+        for charge, idx in charges[mol.name]:
+            for iso in mol.molecules:  # FIXME: may have multiple isomers because of Gypsum
+                atom = iso._molecule.GetAtomWithIdx(idx)
+                atom.SetFormalCharge(charge)
 
 
 def align_to_reference(mols: IsomerCollection, ref_isomer: Isomer, logger) -> None:
