@@ -79,7 +79,7 @@ class rDock(Node):
         mols = hydrogens_last(mols)
 
         smilies = {mol.name: mol.smiles for mol in mols}
-        # charges = get_formal_charges(mols)
+        charges = get_formal_charges(mols)
 
         inputs = Path(INPUT_FILENAME)
 
@@ -121,6 +121,7 @@ class rDock(Node):
         )
 
         self._add_scores(mols)
+        set_formal_charges(mols, charges)
 
         for mol in mols:
             for name, smiles in smilies.items():
@@ -175,29 +176,51 @@ def hydrogens_last(mols: list[IsomerCollection]) -> list[IsomerCollection]:
     return new_mols
 
 
-def get_formal_charges(mols: list[IsomerCollection]) -> dict[str, list[tuple[int, int]]]:
+def get_formal_charges(
+    mols: list[IsomerCollection],
+) -> dict[tuple[int, int], list[tuple[int, int]]]:
+    """Get formal charges for each isomer of each molecule.
 
-    charges = defaultdict(list)
-
-    for mol in mols:
-        for iso in mol.molecules:  # FIXME: may have multiple isomers because of Gypsum
+    Keys are (mol_idx, iso_idx), values are lists of (charge, atom_idx).
+    """
+    charges = {}
+    for mol_idx, mol in enumerate(mols):
+        for iso_idx, iso in enumerate(mol.molecules):
+            iso_charges = []
             for atom in iso._molecule.GetAtoms():
                 if (charge := atom.GetFormalCharge()) != 0:
-                    idx = atom.GetIdx()
-                    charges[mol.name].append((charge, idx))
-
+                    iso_charges.append((charge, atom.GetIdx()))
+            if iso_charges:
+                charges[(mol_idx, iso_idx)] = iso_charges
     return charges
 
 
 def set_formal_charges(
-    mols: list[IsomerCollection], charges: dict[str, list[tuple[int, int]]]
+    mols: list[IsomerCollection], charges: dict[tuple[int, int], list[tuple[int, int]]]
 ) -> None:
+    """Set formal charges for each isomer of each molecule.
 
+    Uses (mol_idx, iso_idx) parsed from the isomer's name to match and restore the charges.
+    """
     for mol in mols:
-        for charge, idx in charges[mol.name]:
-            for iso in mol.molecules:  # FIXME: may have multiple isomers because of Gypsum
-                atom = iso._molecule.GetAtomWithIdx(idx)
-                atom.SetFormalCharge(charge)
+        for iso in mol.molecules:
+            if iso.name is None:
+                continue
+            parts = iso.name.split(":")
+            if len(parts) < 2:
+                continue
+            try:
+                # Handle optional leading underscores in Schrödinger naming
+                mol_idx = int(parts[0][1:]) if parts[0].startswith("_") else int(parts[0])
+                iso_idx = int(parts[1][1:]) if parts[1].startswith("_") else int(parts[1])
+            except ValueError:
+                continue
+
+            if (mol_idx, iso_idx) in charges:
+                for charge, idx in charges[(mol_idx, iso_idx)]:
+                    if idx < iso._molecule.GetNumAtoms():
+                        atom = iso._molecule.GetAtomWithIdx(idx)
+                        atom.SetFormalCharge(charge)
 
 
 def align_to_reference(mols: list[IsomerCollection], ref_isomer: Isomer, logger) -> None:
