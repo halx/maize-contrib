@@ -53,7 +53,7 @@ class rDock(Node):
     out: Output[list[IsomerCollection]] = Output()
     """Docked molecules with conformations and scores attached"""
 
-    mode: Parameter[Literal[MODES]] = Parameter(default="dock")
+    mode: Parameter[MODES] = Parameter(default="dock")
     """Docking, scoring, minimization"""
 
     sys_prm: Parameter[str] = Parameter(default=None)
@@ -86,6 +86,8 @@ class rDock(Node):
         # align molecules to reference
         if self.tethered.value:
             ref_mol = self.tethered_ref_mol.receive_optional()
+            if ref_mol is None:
+                raise ValueError("Tethered docking requested but no reference molecule provided.")
             align_to_reference(mols, ref_mol, self.logger)
 
         save_sdf_library(inputs, mols, split_strategy="none", conformers=True)
@@ -106,7 +108,7 @@ class rDock(Node):
             raise_on_failure=False,
         )
 
-        if res.returncode != 0 or not res.stdout.endswith(b"END OF RUN\n"):
+        if res.returncode != 0 or not res.stdout.strip().endswith(b"END OF RUN"):
             self.logger.error(
                 f"rDock failed with return code {res.returncode} and stdout {res.stdout.decode('ascii')}"
             )
@@ -139,7 +141,7 @@ class rDock(Node):
                 iso.set_tag("origin", self.name)
 
 
-def hydrogens_last(mols: IsomerCollection):
+def hydrogens_last(mols: list[IsomerCollection]) -> list[IsomerCollection]:
     """Reorder atoms such that hydrogens come last
 
     :param mols: molecules to be reordered
@@ -157,6 +159,7 @@ def hydrogens_last(mols: IsomerCollection):
             hydrogens = [a.GetIdx() for a in iso_mol.GetAtoms() if a.GetAtomicNum() == 1]
             new_order = heavy + hydrogens
 
+            conformer_tags = [conf.tags for conf in iso.conformers]
             iso._molecule = Chem.RenumberAtoms(
                 iso_mol, new_order
             )  # this deletes all Mol properties
@@ -165,27 +168,30 @@ def hydrogens_last(mols: IsomerCollection):
                 iso._molecule.SetProp(k, str(v))
 
             iso.name = iso_name
+            iso._init_conformers(conformer_tags)
 
         new_mols.append(mol)
 
     return new_mols
 
 
-def get_formal_charges(mols: IsomerCollection) -> dict[float]:
+def get_formal_charges(mols: list[IsomerCollection]) -> dict[str, list[tuple[int, int]]]:
 
     charges = defaultdict(list)
 
     for mol in mols:
         for iso in mol.molecules:   # FIXME: may have multiple isomers because of Gypsum
             for atom in iso._molecule.GetAtoms():
-                if charge := atom.GetFormalCharge() != 0:
+                if (charge := atom.GetFormalCharge()) != 0:
                     idx = atom.GetIdx()
                     charges[mol.name].append((charge, idx))
 
     return charges
 
 
-def set_formal_charges(mols: IsomerCollection, charges: dict[list]) -> dict[float]:
+def set_formal_charges(
+    mols: list[IsomerCollection], charges: dict[str, list[tuple[int, int]]]
+) -> None:
 
     for mol in mols:
         for charge, idx in charges[mol.name]:
@@ -194,7 +200,7 @@ def set_formal_charges(mols: IsomerCollection, charges: dict[list]) -> dict[floa
                 atom.SetFormalCharge(charge)
 
 
-def align_to_reference(mols: IsomerCollection, ref_isomer: Isomer, logger) -> None:
+def align_to_reference(mols: list[IsomerCollection], ref_isomer: Isomer, logger) -> None:
     """Align the molecules to the reference
 
     Updates molecules with new coordinates.
@@ -218,9 +224,11 @@ def align_to_reference(mols: IsomerCollection, ref_isomer: Isomer, logger) -> No
 
             # FIXME: use align followed by constraint minimization?
             try:
-                iso_mol = constraindt_align(iso_mol, ref_mol, mol_match)
+                conformer_tags = [conf.tags for conf in iso.conformers]
+                iso._molecule = constraindt_align(iso._molecule, ref_mol, mol_match)
+                iso._init_conformers(conformer_tags)
             except:
-                logger.debug(f"{Chem.MolToSmiles(iso_mol)} failed to embed")
+                logger.debug(f"{Chem.MolToSmiles(iso._molecule)} failed to embed")
                 continue
 
             # parsed in lib/RbtModel.cxx: Each line is comma-separated list of atom IDs
