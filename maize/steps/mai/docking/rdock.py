@@ -180,7 +180,7 @@ def get_formal_charges(mols: list[IsomerCollection]) -> dict[str, list[tuple[int
     charges = defaultdict(list)
 
     for mol in mols:
-        for iso in mol.molecules:   # FIXME: may have multiple isomers because of Gypsum
+        for iso in mol.molecules:  # FIXME: may have multiple isomers because of Gypsum
             for atom in iso._molecule.GetAtoms():
                 if (charge := atom.GetFormalCharge()) != 0:
                     idx = atom.GetIdx()
@@ -225,7 +225,7 @@ def align_to_reference(mols: list[IsomerCollection], ref_isomer: Isomer, logger)
             # FIXME: use align followed by constraint minimization?
             try:
                 conformer_tags = [conf.tags for conf in iso.conformers]
-                iso._molecule = constraindt_align(iso._molecule, ref_mol, mol_match)
+                iso._molecule = constraint_align(iso._molecule, ref_mol, mol_match)
                 iso._init_conformers(conformer_tags)
             except:
                 logger.debug(f"{Chem.MolToSmiles(iso._molecule)} failed to embed")
@@ -236,7 +236,7 @@ def align_to_reference(mols: list[IsomerCollection], ref_isomer: Isomer, logger)
             iso.set_tag("TETHERED ATOMS", ",".join(map(str, tethered_vals)))
 
 
-def constraindt_align(
+def constraint_align(
     mol: Chem.Mol,
     ref: Chem.Mol,
     match: list[int],
