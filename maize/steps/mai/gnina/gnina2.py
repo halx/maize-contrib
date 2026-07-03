@@ -13,6 +13,7 @@ from maize.steps.mai.gnina.fragment_growing import (
     prepare_mols_for_covalent,
     prepare_mols_for_local,
 )
+from maize.steps.mai.gnina.ff import constraint_miminimzation
 from maize.utilities.chem import (
     Isomer,
     IsomerCollection,
@@ -133,6 +134,9 @@ class _GninaParameters(Node, register=False):
     covalent_ap_fragment: Parameter[str] = Parameter(optional=True)
     """Attachment point of fragment as chain:resnum:atom_name"""
 
+    minimize_pose: Parameter[bool] = Parameter(default=False)
+    """Carry out final minimization before writing out"""
+
     local_opt_ref: FileParameter[Annotated[Path, Suffix("sdf")]] = FileParameter(optional=True)
     """Reference structure filename for local optimization"""
 
@@ -215,6 +219,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
             fragment_mol_ref=fragment_mol_ref,
             ap_frag_idx=ap_frag_idx,
             orig_dummy_loc=orig_dummy_loc,
+            minimize=self.minimize_pose.value
         )
 
         self.out.send(mols)
@@ -359,6 +364,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         fragment_mol_ref,
         ap_frag_idx: int | None,
         orig_dummy_loc: int | None,
+        minimize: bool = False
     ) -> None:
         """Load outputs, tag scores, merge libraries, and apply metadata."""
 
@@ -405,6 +411,11 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         for mol in mols_out:
             for iso in mol.molecules:
+                if minimize:
+                    self.logger.info("final constraint minimization before write-out")
+                    # FIXME: reconstruct hydrogens from Gypsum prep
+                    iso._molecule = constraint_miminimzation(iso._molecule, self.logger, addHs=True)
+
                 for score_tag, agg in zip(self.SCORE_TAGS, self.SCORE_TAGS_AGG):
                     for conf in iso.conformers:
                         try:

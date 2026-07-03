@@ -248,7 +248,7 @@ def align_to_reference(mols: list[IsomerCollection], ref_isomer: Isomer, logger)
             # FIXME: use align followed by constraint minimization?
             try:
                 conformer_tags = [conf.tags for conf in iso.conformers]
-                iso._molecule = constraint_align(iso._molecule, ref_mol, mol_match)
+                iso._molecule, rmsd1, rmsd2 = constraint_align(iso._molecule, ref_mol, mol_match)
                 iso._init_conformers(conformer_tags)
             except:
                 logger.debug(f"{Chem.MolToSmiles(iso._molecule)} failed to embed")
@@ -280,7 +280,7 @@ def constraint_align(
 
     align_mao = [(j, i) for i, j in enumerate(match)]
 
-    AlignMol(mol, ref, atomMap=align_mao)
+    rmsd1 = AlignMol(mol, ref, atomMap=align_mao)
     forcefield = get_forcefield(mol, confId=0)
 
     conf = ref.GetConformer()
@@ -299,6 +299,6 @@ def constraint_align(
         success = forcefield.Minimize(energyTol=1e-4, forceTol=1e-3)
         max_steps -= 1
 
-    AlignMol(mol, ref, atomMap=align_mao)
+    rmsd2 = AlignMol(mol, ref, atomMap=align_mao)
 
-    return mol
+    return mol, rmsd1, rmsd2
