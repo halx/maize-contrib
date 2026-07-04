@@ -51,6 +51,7 @@ def constraint_miminimzation(
 
     return mol
 
+
 def add_hs_to_smiles(smiles: str, mol: Chem.Mol) -> Chem.Mol | None:
     """Reconstruct hydrogens from SMILES
 
@@ -85,4 +86,3 @@ def add_hs_to_smiles(smiles: str, mol: Chem.Mol) -> Chem.Mol | None:
         full.SetProp(name, str(prop))
 
     return full
-

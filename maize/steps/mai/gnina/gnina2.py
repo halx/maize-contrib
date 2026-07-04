@@ -170,6 +170,7 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         mols = self.inp.receive()
         smilies = {mol.name: mol.smiles for mol in mols}
+        properties = read_properties(mols)
 
         ref = self._resolve_ref(mols)
         mode = self.mode.value
@@ -214,12 +215,13 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
         mols = self._process_results(
             outputs=outputs,
+            properties=properties,
             smilies=smilies,
             is_covalent=is_covalent,
             fragment_mol_ref=fragment_mol_ref,
             ap_frag_idx=ap_frag_idx,
             orig_dummy_loc=orig_dummy_loc,
-            minimize=self.minimize_pose.value
+            minimize=self.minimize_pose.value,
         )
 
         self.out.send(mols)
@@ -359,12 +361,13 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
     def _process_results(
         self,
         outputs: list[Path],
+        properties: dict[str, dict],
         smilies: dict[str, str],
         is_covalent: bool,
         fragment_mol_ref,
         ap_frag_idx: int | None,
         orig_dummy_loc: int | None,
-        minimize: bool = False
+        minimize: bool = False,
     ) -> None:
         """Load outputs, tag scores, merge libraries, and apply metadata."""
 
@@ -440,6 +443,8 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
 
             mol.primary_score_tag = self.PRIMARY_SCORE_TAG
 
+        write_properties(mols_out, properties)
+
         return mols_out
 
     def _prepare_covalent(
@@ -467,3 +472,23 @@ class Gnina(_GninaParameters):  # FIXME: change class name back later when teste
         ap_frag_idx, orig_dummy_loc = prepare_mols_for_covalent(mols, fragment_mol_ref)
 
         return fragment_mol_ref, ap_frag_idx, orig_dummy_loc
+
+
+def read_properties(mols):
+    properties = {}
+
+    for mol in mols:
+        for iso in mol.molecules:
+            properties[iso.name] = iso._molecule.GetPropsAsDict()
+
+    return properties
+
+
+def write_properties(mols, properties):
+    for mol in mols:
+        for iso in mol.molecules:
+            new_properties = iso._molecule.GetPropsAsDict()
+
+            for key, value in properties[iso.name].items():
+                if key not in new_properties:
+                    iso._molecule.SetProp(key, str(value))
