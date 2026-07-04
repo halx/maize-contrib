@@ -23,7 +23,11 @@ def constraint_miminimzation(
     """
 
     if addHs:
-        mol = Chem.AddHs(mol, addCoords=True)
+        try:
+            smiles = mol.GetProp("SMILES")  # assumes Gypsum
+            mol = add_hs_to_smiles(mol, smiles)
+        except KeyError:
+            mol = Chem.AddHs(mol, addCoords=True)
 
     mp = AllChem.MMFFGetMoleculeProperties(mol, mmffVariant=mmff_variant)
 
@@ -52,11 +56,12 @@ def constraint_miminimzation(
     return mol
 
 
-def add_hs_to_smiles(smiles: str, mol: Chem.Mol) -> Chem.Mol | None:
+def add_hs_to_smiles(mol: Chem.Mol, smiles: str) -> Chem.Mol | None:
     """Reconstruct hydrogens from SMILES
 
-    :params: SMILES with hydrogens
-    :mol: molecule with conformers
+    :params mol: molecule with conformers
+    :params smiles: SMILES with hydrogens
+    :returns: molecule with hydrogens
     """
 
     props = mol.GetPropsAsDict()
