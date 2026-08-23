@@ -206,11 +206,6 @@ class Gypsum(Node):
             filtered_isomer_collection = IsomerCollection(isomers)
             filtered_mols.append(filtered_isomer_collection)
 
-        with Chem.SDWriter("_test_gypsum.sdf") as writer:
-            for isomer_collection in filtered_mols:
-                for isomer in isomer_collection.molecules:
-                    writer.write(isomer._molecule)
-
         self.out.send(filtered_mols)
 
 
