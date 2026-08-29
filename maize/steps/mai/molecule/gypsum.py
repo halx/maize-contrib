@@ -17,7 +17,6 @@ from maize.utilities.execution import ProcessError
 from maize.utilities.chem import IsomerCollection, save_smiles, save_sdf_library
 from maize.utilities.io import Config
 
-DEFAULT_FILE_NAME = "untitled_line_{0}__input{0}.sdf"
 FAILED_SMILES_FILE = "gypsum_dl_failed.smi"
 
 
@@ -122,21 +121,32 @@ class Gypsum(Node):
             self.logger.warning("Timed out during embedding")
             failed = set(smiles)
         elif res.returncode > 0:
-            raise ProcessError("Gypsum failed for SMILES: %s", smiles)
+            raise ProcessError(f"Gypsum failed for SMILES: {smiles}")
+        elif (
+            b"Finished Gypsum-DL" not in (res.stdout or b"")
+            and b"Finished Gypsum-DL" not in (res.stderr or b"")
+        ):
+            self.logger.warning(
+                "Gypsum-DL exited with code 0 but did not report successful completion, "
+                "treating all SMILES as failed"
+            )
+            failed = set(smiles)
 
         # Gypsum can fail to embed certain SMILES, but helpfully writes out those separately
         if Path(FAILED_SMILES_FILE).exists():
             self.logger.info("Found failed SMILES file")
 
             with Path(FAILED_SMILES_FILE).open() as failed_file:
-                failed = {smi.split()[0] for smi in failed_file.readlines()}
-                self.logger.info("Failed SMILES:\n'%s'", "\n".join(failed))
+                file_failed = {smi.split()[0] for smi in failed_file.readlines()}
+                self.logger.info("Failed SMILES:\n'%s'", "\n".join(file_failed))
+                failed |= file_failed
 
         mols = []
 
         for i, smi in enumerate(smiles):
             gypsum_index = i + 1
-            file = Path(DEFAULT_FILE_NAME.format(gypsum_index))
+            files = list(Path(".").glob(f"untitled_line_{gypsum_index}__input*.sdf"))
+            file = files[0] if files else None
             self.logger.debug("Checking SMILES '%s'", smi)
 
             if smi in failed:
@@ -144,7 +154,10 @@ class Gypsum(Node):
                     "Skipping failed embedding for SMILES '%s', falling back to RDKit", smi
                 )
                 isomer_collection = IsomerCollection.from_smiles(smi)
-                isomer_collection.embed()  # FIXNE: may fail!
+                try:
+                    isomer_collection.embed()
+                except Exception:
+                    self.logger.warning("RDKit embedding also failed for SMILES '%s'", smi)
 
                 if any(isomer.n_conformers == 0 for isomer in isomer_collection.molecules):
                     self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
@@ -154,11 +167,25 @@ class Gypsum(Node):
                 for isomer in isomer_collection.molecules:
                     isomer.name = f"{i}:0"  # only 1 variant
 
-            # We already check for failed embeddings so this shouldn't really happen
-            elif not file.exists() or file.stat().st_size == 0:
-                raise FileNotFoundError(
-                    f"Gypsum output for '{smi}' at '{file.as_posix()}' not found or empty"
+            # Gypsum may have silently rejected the SMILES at load time
+            # (e.g. unassigned bonds), or the output file may be empty
+            elif file is None or file.stat().st_size == 0:
+                self.logger.warning(
+                    "Gypsum output for SMILES '%s' not found or empty, falling back to RDKit", smi
                 )
+                isomer_collection = IsomerCollection.from_smiles(smi)
+                try:
+                    isomer_collection.embed()
+                except Exception:
+                    self.logger.warning("RDKit embedding also failed for SMILES '%s'", smi)
+
+                if any(isomer.n_conformers == 0 for isomer in isomer_collection.molecules):
+                    self.logger.warning("Coordinate generation for isomer '%s' failed", smi)
+
+                isomer_collection.smiles = smi
+
+                for isomer in isomer_collection.molecules:
+                    isomer.name = f"{i}:0"
 
             # All good!
             else:
